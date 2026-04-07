@@ -1,0 +1,9 @@
+{
+  "name": "insane-search",
+  "version": "0.1.0",
+  "description": "AI 에이전트의 인터넷 접근을 강화하는 플랫폼별 접근 전략. WebFetch가 실패하는 사이트(X/Twitter, Reddit 등)를 자동 우회하고, YouTube 자막 추출, GitHub 검색 등을 제공한다.",
+  "author": {
+    "name": "fivetaku",
+    "email": "fivetaku@gmail.com"
+  }
+}
