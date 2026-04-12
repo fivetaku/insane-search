@@ -1,11 +1,10 @@
 # Insane Search
 
-**30개 플랫폼. 설정 제로. API 키 필요 없음.**
+**Claude Code의 WebSearch/WebFetch를 강화하는 플러그인**
 
-트위터 읽으려니 402. 레딧은 봇 차단. 스택오버플로우는 도메인 블락.
-네이버 블로그는 iframe 안에 갇혀있고.
-
-설치 한 번이면 다 뚫립니다.
+트위터는 402, 레딧은 봇 차단, 스택오버플로우는 도메인 블락, 네이버 블로그는 iframe 감옥 —
+Claude Code가 기본으로 못 가져오는 사이트들을 플랫폼별 우회 전략으로 해결합니다.
+API 키도, 인증도, 별도 설정도 필요 없습니다.
 
 ---
 
@@ -73,13 +72,7 @@ API 키 불필요. 인증 불필요. 설치 한 번이면 30개 플랫폼이 열
 /plugin install insane-search
 ```
 
-### 3. 업데이트
-
-```bash
-/plugin update insane-search
-```
-
-> 설치/업데이트 후에는 Claude Code를 **재시작**하세요.
+> 설치 후에는 Claude Code를 **재시작**하세요.
 
 ### 사전 요구사항
 
