@@ -113,8 +113,13 @@ def main(argv: list[str] | None = None) -> int:
         payload = result.to_dict()
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        # Default: HTML to stdout, status to stderr.
-        print(result.content, end="")
+        print(result.to_untrusted_text(), end="")
+        if result.prompt_injection_risk in ("medium", "high"):
+            signals = ",".join(result.prompt_injection_signals) or "none"
+            print(
+                f"[engine] prompt_injection_risk={result.prompt_injection_risk} signals={signals}",
+                file=sys.stderr,
+            )
         print(f"\n[engine] ok={result.ok} verdict={result.verdict} "
               f"profile={result.profile_used} attempts={len(result.trace)}",
               file=sys.stderr)

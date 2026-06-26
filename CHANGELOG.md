@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Prompt-injection surface hardening for fetched public web content.
+
+- **Content-safety metadata and envelope**: fetched text is now annotated as `untrusted_public_web`, reports deterministic prompt-injection risk signals, and the default CLI text output wraps content between collision-resistant `[BEGIN UNTRUSTED WEB CONTENT]` / `[END UNTRUSTED WEB CONTENT]` boundary lines. Python API callers still receive raw `FetchResult.content`, and can use `FetchResult.to_untrusted_text()` for the same safe agent-facing representation as the CLI; JSON output keeps content omitted and adds metadata only. This is a mitigation/packaging boundary, not blocking or complete prompt-injection prevention.
+
 ## 0.8.1 — 2026-06-22
 
 Validator false-positive fix — a small but complete page is no longer mislabelled a challenge.

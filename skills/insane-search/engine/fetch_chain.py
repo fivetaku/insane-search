@@ -37,6 +37,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional
 
+from .content_safety import ContentSafetyReport, analyze_untrusted_content, wrap_untrusted_content
 from .validators import Verdict, validate, TERMINAL_NONSUCCESS
 from .waf_detector import detect, load_profile, _load_profiles, last_load_error
 from .url_transforms import iter_transformed
@@ -98,6 +99,33 @@ class FetchResult:
     # which escalation routes the engine could not perform itself remain to try.
     untried_routes: list[str] = field(default_factory=list)
     must_invoke_playwright_mcp: bool = False
+    content_trust: str = ""
+    prompt_injection_risk: str = ""
+    prompt_injection_signals: list[str] = field(default_factory=list)
+    untrusted_content_boundary: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        report = analyze_untrusted_content(self.content, source_url=self.final_url)
+        if not self.content_trust:
+            self.content_trust = report.content_trust
+        if not self.prompt_injection_risk:
+            self.prompt_injection_risk = report.prompt_injection_risk
+        if not self.prompt_injection_signals:
+            self.prompt_injection_signals = list(report.prompt_injection_signals)
+        if not self.untrusted_content_boundary:
+            self.untrusted_content_boundary = dict(report.untrusted_content_boundary)
+
+    def to_untrusted_text(self) -> str:
+        report = ContentSafetyReport(
+            content_trust=self.content_trust,
+            prompt_injection_risk=self.prompt_injection_risk,
+            prompt_injection_signals=list(self.prompt_injection_signals),
+            untrusted_content_boundary={
+                "begin": self.untrusted_content_boundary["begin"],
+                "end": self.untrusted_content_boundary["end"],
+            },
+        )
+        return wrap_untrusted_content(self.content, report=report, source_url=self.final_url)
 
     def to_dict(self) -> dict:
         return {
@@ -114,6 +142,10 @@ class FetchResult:
             "stop_reason": self.stop_reason,
             "untried_routes": self.untried_routes,
             "must_invoke_playwright_mcp": self.must_invoke_playwright_mcp,
+            "content_trust": self.content_trust,
+            "prompt_injection_risk": self.prompt_injection_risk,
+            "prompt_injection_signals": self.prompt_injection_signals,
+            "untrusted_content_boundary": self.untrusted_content_boundary,
         }
 
 
