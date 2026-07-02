@@ -391,6 +391,7 @@ def fetch(
         priority=priority,
     )
 
+    win: Optional[dict] = None
     try:
         from . import learning
         if enable_learning and learning.enabled():
@@ -402,6 +403,19 @@ def fetch(
                 learning.record_failure(
                     url, device_class,
                     penalize=learning.is_real_failure(result.stop_reason))
+    except Exception:
+        pass
+
+    # Aggregate observation (site-agnostic): which WAF profile × TLS route won,
+    # for eventual waf_profiles.yaml tuning. Only meaningful for a curl win.
+    try:
+        if result.ok and win:
+            from . import observations
+            observations.record(
+                profile=result.profile_used, impersonate=win.get("impersonate"),
+                transform=win.get("transform", "original"),
+                referer=win.get("referer", ""), verdict=result.verdict,
+                phase=win.get("phase", "grid"), ts=time.time())
     except Exception:
         pass
 
@@ -614,6 +628,31 @@ def _fetch_core(
                 url_transform="original", impersonate=None, referer="",
                 verdict=Verdict.UNKNOWN.value, error=f"{type(e).__name__}:{str(e)[:200]}"))
 
+    # -------- Phase 4: last-resort readable-content fallback ----------------
+    # Grid + browser both failed. Before giving up, two universal services can
+    # still return the TEXT (not the live page): a reader-proxy render and the
+    # public web archive. Skipped for terminal auth/404 (login-specific / gone).
+    if stop_reason not in (Verdict.AUTH_REQUIRED.value, Verdict.NOT_FOUND.value):
+        try:
+            from . import last_resort
+            lr = last_resort.run(url, timeout=timeout if timeout and timeout > 20 else 25)
+        except Exception:
+            lr = None
+        if lr:
+            trace.append(Attempt(
+                phase="last_resort", executor=lr["route"], url=lr["final_url"],
+                url_transform="-", impersonate=None, referer="",
+                status=200, body_size=len(lr["content"]),
+                verdict=Verdict.WEAK_OK.value, reasons=["degraded:readable-only"],
+            ))
+            return FetchResult(
+                ok=True, content=lr["content"], final_url=lr["final_url"],
+                verdict=Verdict.WEAK_OK.value, profile_used=profile_used, trace=trace,
+                summary=f"last-resort readable-only via {lr['route']} (NOT the live page)",
+                planned_attempts=planned, executed_attempts=curl_attempts,
+                grid_exhausted=grid_exhausted, stop_reason="last_resort",
+            )
+
     # -------- Give up, return best we have ----------------------------------
     return _give_up(trace, profile_used, last_resp, last_attempt, best_suspect,
                     planned=planned, executed=curl_attempts,
@@ -690,20 +729,43 @@ def url_of(attempt: Optional[Attempt]) -> str:
 
 
 def fetch_many(urls: list[str], **kwargs) -> list[FetchResult]:
-    """Fetch many URLs, reusing the per-host SessionPool across calls.
+    """Fetch many URLs — hosts run CONCURRENTLY, each host's URLs SERIALLY.
 
-    The first URL of a host may pay for warmup / browser bootstrap; later URLs
-    of the SAME host reuse the winning session's cookies + connection, which is
-    where R7-style bulk collection gets its throughput. Ordering by host keeps
-    the warm session hot."""
+    Per-host serialisation keeps the SessionPool coherent (one host reuses its
+    winning session's cookies + connection — where R7 bulk collection gets its
+    throughput) and stays polite (no self-inflicted 429). Different hosts have
+    independent sessions, so running them in parallel multiplies wall-clock
+    throughput. Concurrency = min(host count, INSANE_MANY_WORKERS, default 4);
+    set the env to 1 for the old fully-sequential behaviour.
+
+    Output order matches input order."""
+    from concurrent.futures import ThreadPoolExecutor
+    from .transport import _host_of
+
     by_host: dict[str, list[int]] = {}
     for i, u in enumerate(urls):
-        from .transport import _host_of
         by_host.setdefault(_host_of(u), []).append(i)
+
     results: list[Optional[FetchResult]] = [None] * len(urls)
-    for _host, idxs in by_host.items():
+
+    def _run_host(idxs: list[int]) -> None:
         for i in idxs:
-            results[i] = fetch(urls[i], **kwargs)
+            try:
+                results[i] = fetch(urls[i], **kwargs)
+            except Exception as e:  # one URL must not sink the whole batch
+                results[i] = FetchResult(
+                    ok=False, summary=f"fetch_many error: {type(e).__name__}:{str(e)[:120]}",
+                    stop_reason="error", final_url=urls[i])
+
+    workers = max(1, int(os.environ.get("INSANE_MANY_WORKERS", "4")))
+    workers = min(workers, len(by_host)) or 1
+    if workers == 1:
+        for idxs in by_host.values():
+            _run_host(idxs)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            list(ex.map(_run_host, by_host.values()))
+
     return [r for r in results if r is not None]
 
 

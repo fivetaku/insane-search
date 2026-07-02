@@ -68,7 +68,35 @@ class SessionPool:
                 return None
             ent = _Entry(session=sess)
             self._entries[key] = ent
+            # Durable cookie bridge: seed the fresh session with cookies a prior
+            # browser / MCP / logged-in-profile pass persisted for this host, so
+            # the very first curl request is already cleared / authenticated.
+            self._seed_from_jar(ent, host)
             return ent
+
+    @staticmethod
+    def _seed_from_jar(ent: "_Entry", host: str) -> None:
+        try:
+            from . import cookiejar
+            data = cookiejar.load(host)
+            if not data:
+                return
+            for c in data.get("cookies") or []:
+                name = c.get("name")
+                if not name:
+                    continue
+                try:
+                    ent.session.cookies.set(name, c.get("value", ""),
+                                            domain=c.get("domain") or host)
+                except Exception:
+                    try:
+                        ent.session.cookies.set(name, c.get("value", ""))
+                    except Exception:
+                        continue
+            if data.get("user_agent"):
+                ent.injected_ua = data["user_agent"]
+        except Exception:
+            pass
 
     def warmup(self, host: str, impersonate: str, root_url: str, timeout: int = 15) -> bool:
         """Hit the site root once per (host, impersonate) so a WAF sensor can
@@ -83,7 +111,8 @@ class SessionPool:
             return False
         ent.warmed = True  # mark first to avoid duplicate warmups under race
         try:
-            ent.session.get(root_url, timeout=timeout, allow_redirects=True)
+            ent.session.get(root_url, timeout=timeout, allow_redirects=True,
+                            proxies=self._proxies_for(host))
             ent.requests_made += 1
             return True
         except Exception:
@@ -143,6 +172,11 @@ class SessionPool:
         if extra_headers:
             headers.update(extra_headers)
 
+        # Optional proxy axis (IP rotation). Stable per host; `INSANE_PROXY_SALT`
+        # advances the pick to deliberately change source IP on a retry. No-op
+        # (proxies=None) when INSANE_PROXIES is unset.
+        proxies = self._proxies_for(host)
+
         ent = self.get(host, impersonate)
         if ent is None:
             try:
@@ -151,14 +185,25 @@ class SessionPool:
                 return None, "curl_cffi not installed"
             def _do_get(u):
                 return cffi_requests.get(u, impersonate=impersonate, headers=headers,
-                                         timeout=timeout, allow_redirects=False)
+                                         timeout=timeout, allow_redirects=False,
+                                         proxies=proxies)
             return self._fetch_following(_do_get, url, allow_private, max_redirects, None)
 
         if ent.injected_ua:
             headers.setdefault("User-Agent", ent.injected_ua)
         def _do_get(u):
-            return ent.session.get(u, headers=headers, timeout=timeout, allow_redirects=False)
+            return ent.session.get(u, headers=headers, timeout=timeout,
+                                   allow_redirects=False, proxies=proxies)
         return self._fetch_following(_do_get, url, allow_private, max_redirects, ent)
+
+    @staticmethod
+    def _proxies_for(host: str):
+        try:
+            from . import proxies as _px
+            salt = int(os.environ.get("INSANE_PROXY_SALT", "0"))
+            return _px.as_curl_cffi(_px.pick(host, salt))
+        except Exception:
+            return None
 
     @staticmethod
     def _fetch_following(do_get, url: str, allow_private: bool, max_redirects: int,

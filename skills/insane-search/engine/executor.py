@@ -34,13 +34,34 @@ from .fetch_chain import Attempt
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
 
-def _profile_dir_for(url: str, choice: str) -> str:
-    """Per-host + per-device Chrome profile directory.
+def auth_enabled() -> bool:
+    """When on, the browser fallback reuses a DURABLE logged-in Chrome profile
+    instead of a throwaway per-host one — so the fallback (and, via the cookie
+    bridge, the curl grid) runs AS the logged-in user. Opt-in: login state must
+    never leak into anonymous fetches by default."""
+    return os.environ.get("INSANE_AUTH_PROFILE", "") in ("1", "true", "yes")
 
-    The host is hashed (never stored as a site name) so the No-Site-Name Rule
-    holds while each host keeps an isolated, reusable profile. Desktop and
-    mobile get separate subdirs so emulation state never bleeds across.
+
+def auth_profile_dir() -> str:
+    """The durable, logged-in Chrome profile (shared — login is global to it).
+    Path is host-agnostic, so the No-Site-Name Rule holds."""
+    p = os.environ.get("INSANE_AUTH_PROFILE_DIR")
+    if p:
+        return os.path.expanduser(p)
+    return os.path.expanduser("~/.local/share/insane-search/chrome-profile")
+
+
+def _profile_dir_for(url: str, choice: str) -> str:
+    """Chrome profile directory for the browser fallback.
+
+    Auth mode (opt-in): reuse the durable logged-in profile so the fallback is
+    authenticated. Default: a per-host + per-device throwaway profile — the host
+    is hashed (never stored as a site name) so the No-Site-Name Rule holds while
+    each host keeps an isolated, reusable profile. Desktop and mobile get
+    separate subdirs so emulation state never bleeds across.
     """
+    if auth_enabled():
+        return auth_profile_dir()
     import hashlib
     from urllib.parse import urlsplit
     host = (urlsplit(url).hostname or "unknown").lower()
@@ -193,6 +214,18 @@ def run_playwright_fallback(
         args["device"] = "iPhone 13 Pro"
     if success_selectors:
         args["waitSelector"] = success_selectors[0]
+    # Proxy axis: route the real browser through the same per-host proxy the
+    # curl grid uses, so cookies it clears are valid from that IP. No-op when
+    # INSANE_PROXIES is unset.
+    try:
+        from . import proxies as _px
+        from urllib.parse import urlsplit
+        _host = (urlsplit(url).hostname or "").lower()
+        _pw_proxy = _px.as_playwright(_px.pick(_host, int(os.environ.get("INSANE_PROXY_SALT", "0"))))
+        if _pw_proxy:
+            args["proxy"] = _pw_proxy
+    except Exception:
+        pass
 
     rc, stdout, stderr = _run_node_template(template, args, timeout=timeout + 10)
     att.elapsed_s = round(time.time() - t0, 3)
@@ -246,9 +279,15 @@ def _parse_envelope(stdout: str, url: str):
 def _bridge_cookies_to_pool(url: str, cookies: list, user_agent: Optional[str]) -> None:
     try:
         from .transport import POOL, pool_enabled, _host_of
-        if not pool_enabled():
-            return
-        # Browser is real Chrome → seed the "chrome" curl identity for this host.
-        POOL.inject_cookies(_host_of(url), "chrome", cookies, user_agent=user_agent)
+        if pool_enabled():
+            # Browser is real Chrome → seed the "chrome" curl identity for this host.
+            POOL.inject_cookies(_host_of(url), "chrome", cookies, user_agent=user_agent)
+    except Exception:
+        pass
+    # Persist to disk too, so the cleared/authenticated cookies survive to the
+    # NEXT CLI process (the in-memory pool dies with this process).
+    try:
+        from . import cookiejar
+        cookiejar.save(url, cookies, user_agent=user_agent)
     except Exception:
         pass

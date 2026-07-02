@@ -41,6 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Skip Playwright fallback (curl-only).")
     p.add_argument("--no-phase0", action="store_true",
                    help="Skip the Phase 0 official-API router (generic grid only).")
+    p.add_argument("--save-cookies", metavar="JSON_FILE", default=None,
+                   help="Persist cookies (a JSON list of {name,value,domain?}) for URL's "
+                        "host into the durable cookie jar, then exit WITHOUT fetching. Use "
+                        "after clearing a challenge via MCP so the next curl fetch is cleared.")
     p.add_argument("--json", action="store_true",
                    help="Emit FetchResult as JSON to stdout (content omitted).")
     p.add_argument("--trace", action="store_true",
@@ -50,6 +54,29 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # --save-cookies short-circuit: persist MCP/browser-harvested cookies for the
+    # URL's host into the durable jar so the NEXT curl fetch starts cleared. The
+    # cookie jar is auto-loaded by transport.SessionPool on session creation.
+    if args.save_cookies:
+        from . import cookiejar
+        try:
+            with open(args.save_cookies, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception as e:
+            print(f"engine: cannot read cookies file: {e}", file=sys.stderr)
+            return 2
+        cookies = raw.get("cookies") if isinstance(raw, dict) else raw
+        ua = raw.get("user_agent") if isinstance(raw, dict) else None
+        if not isinstance(cookies, list):
+            print("engine: cookies JSON must be a list of {name,value,domain?} "
+                  "or {cookies:[...], user_agent?}", file=sys.stderr)
+            return 2
+        ok = cookiejar.save(args.url, cookies, user_agent=ua)
+        print(f"[engine] saved {len(cookies)} cookie(s) for host of {args.url}: ok={ok}",
+              file=sys.stderr)
+        return 0 if ok else 1
+
     try:
         result = fetch(
             args.url,

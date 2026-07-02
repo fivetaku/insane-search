@@ -78,11 +78,10 @@ async function main() {
 
   let ctx;
   try {
-    ctx = await chromium.launchPersistentContext(profileDir, {
-      channel: 'chrome',
-      headless,
-      ...dev,
-    });
+    const ctxOpts = { channel: 'chrome', headless, ...dev };
+    // Optional proxy (IP-rotation axis); absent when INSANE_PROXIES is unset.
+    if (args.proxy && args.proxy.server) { ctxOpts.proxy = args.proxy; }
+    ctx = await chromium.launchPersistentContext(profileDir, ctxOpts);
     const page = await ctx.newPage();
     const deadline = Date.now() + timeoutMs;
     const rem = (cap) => Math.max(1000, Math.min(cap || timeoutMs, deadline - Date.now()));

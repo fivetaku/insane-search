@@ -54,6 +54,10 @@ URL_ALLOWLIST = {
     "www.google.com", "google.com",
     # Generic HTTP test endpoint for infrastructure / transport tests.
     "httpbin.org",
+    # Universal content-retrieval infrastructure (valid for ANY url, not a
+    # site preference): a reader-proxy render service and the public web
+    # archive. Used by last_resort.py as a degraded readable-content fallback.
+    "r.jina.ai", "archive.org", "web.archive.org",
 }
 
 # Files / dirs that must be clean.

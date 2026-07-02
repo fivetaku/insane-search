@@ -97,6 +97,9 @@ async function main() {
     } else {
       ctxOpts.viewport = viewport;
     }
+    // Optional proxy (IP-rotation axis). Generic {server,username,password} from
+    // the Python side; absent when INSANE_PROXIES is unset.
+    if (args.proxy && args.proxy.server) { ctxOpts.proxy = args.proxy; }
     ctx = await chromium.launchPersistentContext(profileDir, ctxOpts);
     const page = await ctx.newPage();
     // Single shared deadline across warmup + main + reload navigations so the

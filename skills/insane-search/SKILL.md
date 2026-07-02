@@ -256,11 +256,39 @@ cd "${CLAUDE_PLUGIN_ROOT}/skills/insane-search/engine/templates" && npm install
 npx patchright install chrome   # 시스템 Chrome 채널 (channel:'chrome' 사용)
 ```
 
+## 강화 기능 (env 게이트 — 기본 무해, 켜면 강력)
+
+아래는 전부 **환경변수로 opt-in**이며, 미설정 시 no-op이라 기존 동작을 바꾸지 않는다. No-Site-Name 룰 유지 (사이트 지식은 env·런타임·데이터 파일에만).
+
+| 기능 | env | 효과 |
+|------|-----|------|
+| **인증 프로필** | `INSANE_AUTH_PROFILE=1` (경로: `INSANE_AUTH_PROFILE_DIR`, 기본 `~/.local/share/insane-search/chrome-profile`) | Playwright 폴백이 **로그인된 영구 크롬 프로필**을 재사용 → 폴백(및 cookie bridge 통해 curl 격자)이 **로그인 상태로** 동작. 로그인 게이트 콘텐츠 접근. 기본 off(익명 fetch에 로그인 누출 방지) |
+| **프록시 로테이션** | `INSANE_PROXIES="url1,url2"` (http(s)/socks5, `user:pass@` 가능), `INSANE_PROXY_SALT`로 IP 강제 변경 | curl 격자 + 브라우저 폴백이 프록시 경유. **IP 평판 차단·429**를 뚫는 유일 축. host별 stable 매핑(쿠키 일관성), salt로 재시도 시 IP 교체 |
+| **쿠키 영속** | `INSANE_COOKIEJAR=1`(기본 on), `INSANE_COOKIE_TTL_SEC`(기본 6h) | 브라우저/MCP가 뚫은 통행증(cf_clearance·_abck 등)을 디스크 저장 → **다음 CLI 프로세스**의 첫 curl이 이미 뚫린 상태. `~/.insane_search/cookies/` |
+| **최종 폴백** | `INSANE_LAST_RESORT=1`(기본 on) | 격자+브라우저 전멸 시 리더-프록시 렌더 + 웹아카이브 스냅샷으로 **읽을 수 있는 본문이라도** 회수. verdict=weak_ok + `degraded:readable-only` 표기(라이브 페이지 아님) |
+| **관측 로깅** | `INSANE_OBSERVE=1`(기본 on), `INSANE_OBS_PATH` | curl 격자 성공마다 `{WAF프로파일 × TLS × transform × referer}` append → `waf_profiles.yaml` 튜닝 근거 축적. host 미저장(사이트 무관) |
+| **병렬 대량수집** | `INSANE_MANY_WORKERS`(기본 4) | `fetch_many()`가 host 간 **동시**, host 내부 직렬(세션 일관성·rate-limit 예의). 입력 순서 보존 |
+
+### MCP로 뚫은 쿠키를 curl에 물려주기 (cookie bridge 수동 경로)
+
+MCP Playwright로 챌린지를 통과했으면, 그 쿠키를 저장해 이후 `python3 -m engine` 대량수집을 싸게 만든다:
+
+```bash
+# 1) MCP 세션에서 쿠키 회수 (mcp__playwright__browser_evaluate 등) → JSON 파일로 저장
+#    형식: [{"name":"cf_clearance","value":"...","domain":"..."}] 또는 {"cookies":[...],"user_agent":"..."}
+# 2) 영구 쿠키 저장소에 주입 (fetch 안 하고 저장만)
+python3 -m engine "<원본 URL>" --save-cookies /tmp/cookies.json
+# 3) 이후 같은 host의 fetch는 자동으로 그 쿠키를 로드해 시작
+python3 -m engine "<같은 host의 다른 URL>"
+```
+
 ## 빠른 참조 — Phase 0 명령어
 
-> **먼저 이걸 기억하라: Reddit/X/YouTube는 이제 engine이 자동 처리한다.**
+> **먼저 이걸 기억하라: 공식 API 있는 플랫폼은 이제 engine이 자동 처리한다.**
 > `python3 -m engine "<URL>"` 하나면 Phase 0 라우터(`engine/phase0.py`)가 **격자보다 먼저** 공식 경로를 시도한다 —
-> Reddit→`.rss`, X 트윗→`tweet-result`/oEmbed, X 프로필→syndication, YouTube→`yt-dlp`.
+> Reddit→`.rss`, X 트윗→`tweet-result`/oEmbed, X 프로필→syndication, YouTube→`yt-dlp`,
+> Hacker News→Algolia/Firebase, Bluesky→AT Protocol appview, Wikipedia→REST v1,
+> arXiv→Atom API, GitHub→REST v3, StackOverflow→SE API, 네이버 블로그→모바일 PostView.
 > 아래 수동 스니펫은 디버그/참조용이며 trace에 `phase=phase0`로 기록된다.
 > (실측 주의: Reddit `.json`+모바일UA·`syndication-timeline`은 흔히 403/429라 plain `curl`은 신뢰 불가 — engine이 curl_cffi 지문으로 접근한다.)
 
