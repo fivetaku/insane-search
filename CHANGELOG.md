@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+Cross-platform yt-dlp invocation — the YouTube / media route no longer
+misreports an installed yt-dlp as missing.
+
+- **`engine/phase0.py`**: the YouTube Phase-0 route invoked yt-dlp only as the
+  bare `yt-dlp` console script. With `pip install --user` and on Windows / venv
+  installs the script dir is commonly absent from PATH, so `subprocess.run`
+  raised `FileNotFoundError` and the route reported `"yt-dlp not installed"`
+  even though yt-dlp *was* installed and importable — silently disabling the
+  headline media route (1,858 sites) for those users. New `_ytdlp_argv()`
+  prefers the `yt-dlp` console script on PATH and falls back to
+  `<python> -m yt_dlp`, mirroring the `which yt-dlp || python3 -m yt_dlp`
+  fallback already documented in `references/media.md`. Non-regressive:
+  environments with `yt-dlp` on PATH are unchanged.
+- **`tests/coverage_battery.py`**: the youtube battery uses the same resolution.
+- **`engine/bias_check.py`**: the `EXPLICIT_ALLOW_FILES` exemption compared
+  `str(rel)`, which is backslash-separated on Windows and therefore never
+  matched the POSIX-style allow-list — so the sanctioned `phase0.py` exemption
+  silently failed and the No-Site-Name gate reported false positives when run
+  on Windows. Now compares `rel.as_posix()`. Same theme (cross-platform); no
+  behaviour change on POSIX.
+- Adds network-free regression tests in `engine/tests/test_u9.py`.
+
 ## 0.9.1 — 2026-07-02
 
 Activate the Patchright fallback and align the self-learning host key.

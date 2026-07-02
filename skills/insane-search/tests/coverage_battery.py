@@ -129,9 +129,21 @@ def x_routes(handle: str = "AnthropicAI", tweet_id: str = "1976332881409737124")
     return out
 
 
+def _ytdlp_cmd() -> list[str]:
+    """`yt-dlp` on PATH, else `<python> -m yt_dlp` (pip --user / venv / Windows)."""
+    import importlib.util
+    import shutil
+    exe = shutil.which("yt-dlp")
+    if exe:
+        return [exe]
+    if importlib.util.find_spec("yt_dlp") is not None:
+        return [sys.executable, "-m", "yt_dlp"]
+    return ["yt-dlp"]  # last resort: let subprocess raise a clear FileNotFoundError
+
+
 def youtube_routes(vid: str = "dQw4w9WgXcQ") -> list[RouteResult]:
     def ytdlp():
-        p = subprocess.run(["yt-dlp", "--dump-json", "--skip-download", f"https://www.youtube.com/watch?v={vid}"],
+        p = subprocess.run(_ytdlp_cmd() + ["--dump-json", "--skip-download", f"https://www.youtube.com/watch?v={vid}"],
                            capture_output=True, text=True, timeout=60)
         if p.returncode != 0:
             return RouteResult("youtube", "yt-dlp --dump-json", ok=False, error=(p.stderr or "")[:120])
