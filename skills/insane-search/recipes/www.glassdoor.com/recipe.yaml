@@ -1,0 +1,36 @@
+domain: www.glassdoor.com
+verified_at: "2026-07-20"
+status: partial   # HTML 차단 유지 — API 일부만 생존
+
+# 실측 (2026-07-20, residential IP, curl_cffi chrome/safari):
+# - typeahead API: 200 JSON (WAF 얕음 — R7 패턴 실증)
+# - HTML (Overview/Reviews/Jobs): 403 CF 인터랙티브 챌린지 (IP 평판 차단)
+# - nodriver/patchright 40s 대기: 동일 인터스티셜 (지문 아닌 IP 문제)
+# - Jina Reader: 차단 / Wayback: 껍데기만 (데이터는 클라이언트 하이드레이션)
+
+endpoints:
+  - name: employer_typeahead
+    url: /api-web/employer/find.htm?autocomplete=true&maxEmployersForAutocomplete=50&term={query}
+    method: GET
+    headers: {Accept: application/json}
+    expect: json
+    notes: 기업명 → [{id, label, logoURL, ...}] — 기업 ID 조회용. 유일하게 200 확인된 라이브 경로.
+
+extraction:
+  format: apollo_cache   # HTML 확보 성공 시: apolloState 정규식 또는 __NEXT_DATA__.props.pageProps.apolloCache
+  notes: 리뷰/채용/연봉 전체 데이터셋이 apolloCache에 JSON으로 내장 — HTML만 얻으면 파싱 불필요
+
+url_rewrites: []   # 페이지→API 매핑 없음 (typeahead는 검색 전용)
+
+blocked_paths:
+  - pattern: /(Overview|Reviews|Jobs|Salary)/
+    reason: cloudflare_interactive + ip_reputation
+    workarounds:
+      - human_cookie_injection: |
+          사용자가 실제 Chrome에서 glassdoor.com 접속 → 챌린지 수동 통과 →
+          scripts/extract_cookies.py --browser chrome --domain glassdoor.com 실행 →
+          cf_clearance를 같은 머신/같은 IP의 엔진 세션에 주입 (IP+UA 바인딩)
+      - paid_unlocker: ScrapFly asp=True+country=US / ZenRows / Bright Data Web Unlocker
+      - wayback_shell_only: 스냅샷 존재하나 데이터 없음 (2026-07 확인)
+
+limits: {rate: "conservative", known: "403은 terminal 아님 — IP 변경 시 재평가"}

@@ -14,7 +14,7 @@
 
 _meta:
   schema_version: 1
-  last_reviewed: "2026-04-21"
+  last_reviewed: "2026-07-20"
 
 akamai_bot_manager:
   detectors:
@@ -29,6 +29,7 @@ akamai_bot_manager:
   capabilities_needed:
     - needs_real_tls_stack   # Playwright Chromium (BoringSSL) is detected
     - needs_js_exec          # 2.6KB challenge requires JS sensor
+    - needs_protocol_stealth # gates on Runtime.enable — Playwright shims fail
   tls_impersonate_candidates:
     # Every impersonate target curl_cffi supports that historically yielded
     # at least a challenge page (i.e. IP still alive) rather than an outright
@@ -46,11 +47,11 @@ akamai_bot_manager:
     - chrome107
     - chrome120
     - chrome123
-    - chrome145     # curl_cffi 0.11+ needed — mark avoid for older installs
-    - chrome146
     - firefox
     - firefox133
     - firefox135
+    # Version availability is handled at runtime (engine filters candidates
+    # against the installed curl_cffi); keep this list for WAF blacklists only.
   referer_strategies:
     - self_root    # scheme://host/
   url_transform_order:
@@ -58,6 +59,7 @@ akamai_bot_manager:
     - mobile_subdomain   # www.* → m.* — strong observational win in SSR sites
   fallback_when_challenge:
     - curl_grid_exhaust   # try more impersonate × referer × url combos
+    - protocol_stealth_chrome
     - playwright_real_chrome
   notes: |
     DO NOT encode site-specific selectors or byte-size fingerprints here.
@@ -71,6 +73,7 @@ cloudflare_turnstile:
     body: ["Just a moment...", "Checking your browser", "cf-chl-bypass", "Attention Required! | Cloudflare"]
   capabilities_needed:
     - needs_js_exec        # MCP Playwright Chromium OK — no real-TLS required
+    - needs_protocol_stealth  # managed/Turnstile gates fingerprint the CDP shim
   tls_impersonate_candidates:
     - [chrome, chrome_android]
   referer_strategies:
@@ -78,6 +81,7 @@ cloudflare_turnstile:
     - self_root
   fallback_when_challenge:
     - playwright_mcp       # MCP sufficient; Chromium TLS passes CF baseline
+    - protocol_stealth_chrome  # nodriver passes gates all Playwright shims fail
     - playwright_real_chrome
 
 f5_big_ip:
@@ -109,9 +113,11 @@ datadome_probable:
   capabilities_needed:
     - needs_real_tls_stack
     - needs_js_exec
+    - needs_protocol_stealth  # slides/interstitials fingerprint the CDP shim
   tls_impersonate_candidates:
     - [safari, chrome]
   fallback_when_challenge:
+    - protocol_stealth_chrome
     - playwright_real_chrome
   notes: |
     "_probable" suffix reminds us this is a growing attack surface — mark
@@ -124,14 +130,66 @@ perimeterx_human:
   capabilities_needed:
     - needs_real_tls_stack
     - needs_js_exec
+    - needs_protocol_stealth
   tls_impersonate_candidates:
     - [safari, chrome]
   fallback_when_challenge:
+    - protocol_stealth_chrome
     - playwright_real_chrome
   notes: |
     PerimeterX (now HUMAN Bot Defender). Distinct cookie family from
     DataDome. Keep profiles separate so planner does not pick wrong
     fallback strategy.
+
+kasada_ips:
+  detectors:
+    header: ["x-kpsdk-*"]
+    body: ["x-kpsdk-ct", "kpsdk-v", "Kasada"]
+  confidence_rules:
+    strong: 2
+    weak: 1
+  capabilities_needed:
+    - needs_real_tls_stack
+    - needs_js_exec            # p.js VM proof-of-work challenge
+    - needs_protocol_stealth
+  tls_impersonate_candidates:
+    - [chrome, chrome131, chrome133a, chrome136, chrome145, chrome146]
+    - [safari, safari260, safari2601]
+  referer_strategies:
+    - self_root
+  url_transform_order:
+    - original
+  fallback_when_challenge:
+    - protocol_stealth_chrome
+    - playwright_real_chrome
+  notes: |
+    Kasada gates with HTTP 429 + a p.js VM challenge, then expects x-kpsdk-*
+    headers on follow-up requests. Detection runs on that same response.
+
+imperva_incapsula:
+  detectors:
+    cookie: ["incap_ses_*", "visid_incap_*"]
+    header: ["x-iinfo"]
+    body: ["Incapsula incident ID", "_Incapsula_Resource", "Request unsuccessful. Incapsula"]
+  confidence_rules:
+    strong: 2
+    weak: 1
+  capabilities_needed:
+    - needs_real_tls_stack
+    - needs_js_exec
+  tls_impersonate_candidates:
+    - [chrome, chrome131, chrome136]
+    - [safari, safari260]
+  referer_strategies:
+    - self_root
+  url_transform_order:
+    - original
+  fallback_when_challenge:
+    - playwright_real_chrome
+    - protocol_stealth_chrome
+  notes: |
+    Imperva/Incapsula (Distil merged here). Cookie family incap_ses_*/
+    visid_incap_* is the reliable artifact; body markers fire on the block page.
 
 # ---------------------------------------------------------------------------
 # Safety net: always-valid fallback profile.

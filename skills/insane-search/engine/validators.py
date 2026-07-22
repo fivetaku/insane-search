@@ -42,6 +42,8 @@ HARD_CHALLENGE_MARKERS: list[str] = [
     "Powered and protected by Akamai",
     "Just a moment...",
     "cf-chl-bypass",
+    "window._cf_chl_opt",
+    "orchestrate/chl_page",
     "Attention Required! | Cloudflare",
     "<title>Bot Challenge</title>",
     "The requested URL was rejected",
@@ -64,6 +66,9 @@ CHALLENGE_MARKERS: list[str] = HARD_CHALLENGE_MARKERS + SOFT_CHALLENGE_MARKERS
 
 # Minimum BODY BYTE size below which we suspect a stub / challenge page.
 SMALL_BODY_THRESHOLD = 3000
+
+# Above this size a SINGLE soft marker is a content mention, not a challenge.
+SOFT_MENTION_MAX_BYTES = 20000
 
 
 class Verdict(Enum):
@@ -109,12 +114,23 @@ class ValidationResult:
         }
 
 
+def _marker_pattern(marker: str) -> re.Pattern:
+    # Lookbehind ONLY: a marker embedded as the tail of a longer identifier
+    # ("octocaptcha") is not a challenge; no lookahead because structural
+    # markers legitimately prefix longer tokens (window._cf_chl_opt).
+    return re.compile(r"(?<![a-z0-9_])" + re.escape(marker.lower()))
+
+
+_HARD_PATTERNS = [(m, _marker_pattern(m)) for m in HARD_CHALLENGE_MARKERS]
+_SOFT_PATTERNS = [(m, _marker_pattern(m)) for m in SOFT_CHALLENGE_MARKERS]
+
+
 def _hard_marker_hits(body_lower: str) -> list[str]:
-    return [m for m in HARD_CHALLENGE_MARKERS if m.lower() in body_lower]
+    return [m for m, pat in _HARD_PATTERNS if pat.search(body_lower)]
 
 
 def _soft_marker_hits(body_lower: str) -> list[str]:
-    return [m for m in SOFT_CHALLENGE_MARKERS if m in body_lower]
+    return [m for m, pat in _SOFT_PATTERNS if pat.search(body_lower)]
 
 
 def _abck_unresolved(cookies: dict) -> bool:
@@ -292,9 +308,11 @@ def validate(
     # --- Layer 6: no positive proof — heuristics --------------------------
     soft = _soft_marker_hits(lowered)
     if soft:
-        r.verdict = Verdict.CHALLENGE
-        r.reasons.extend(f"soft:{m}" for m in soft[:3])
-        return r
+        if len(soft) >= 2 or size <= SOFT_MENTION_MAX_BYTES:
+            r.verdict = Verdict.CHALLENGE
+            r.reasons.extend(f"soft:{m}" for m in soft[:3])
+            return r
+        r.reasons.append(f"soft_mention:{soft[0]}")
 
     if size < SMALL_BODY_THRESHOLD:
         # A small body is only weak evidence of a challenge stub. A COMPLETE,

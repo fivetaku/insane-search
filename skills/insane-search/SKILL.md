@@ -177,6 +177,7 @@ else:
 `fetch()`는 단일 API이지만 내부는 phase로 나뉘어 있다. `result.trace`에서 각 시도를 확인할 수 있다.
 
 ```
+recipe     — recipes/<domain>/recipe.yaml 있으면 격자 전 API 직행 (scraper-forge 결과)
 probe      — curl_cffi + safari + self-referer로 첫 시도
 validate   — 4-계층 검증 (marker / size / cookie / success_selectors)
 detect     — WAF 제품 감지 ([(profile_id, confidence)] 랭킹)
@@ -214,11 +215,20 @@ report     — FetchResult(ok, verdict, profile_used, trace, summary)
 
 | 태그 | 실행기 | 언제 |
 |------|--------|------|
-| `needs_real_tls_stack` + `needs_js_exec` | `playwright_real_chrome.js` (로컬 Node) | Akamai Bot Manager 등 — Chromium 번들 TLS는 탐지됨 |
+| `needs_protocol_stealth` | `protocol_stealth_chrome` (nodriver → patchright+channel=chrome) | 자동화 프로토콜(Runtime.enable)을 지문화하는 게이트 — Playwright 심 계열은 패치 무관 실패(2026 벤치 실측) |
+| `needs_real_tls_stack` + `needs_js_exec` | `playwright_real_chrome.js` (로컬 Node) | Chromium 번들 TLS가 탐지되는 경우 |
 | `needs_js_exec` only | Playwright MCP (`mcp__playwright__*`) | Cloudflare 기본 방어 등 |
 | `needs_mobile_context` (+ real_tls) | `playwright_mobile_chrome.js` | 모바일 디바이스 에뮬레이션 필요 |
 
+`protocol_stealth_chrome`는 `pip install nodriver`(또는 patchright)가 필요하다 — 없으면 다음 fallback으로 진행, `INSANE_AUTO_INSTALL=1`이면 첫 호출 시 자동 설치.
 자세한 선택 기준: [playwright.md](references/playwright.md).
+
+### 막힌 사이트를 재사용 수집기로 (scraper-forge)
+
+HTML은 막혀도 내부 API는 얕은 경우가 많다(R7). 발굴→검증→레시피→(선택)스크래퍼 흐름은 [scraper-forge.md](references/scraper-forge.md) 참조:
+- 정적 마이닝: `python3 scripts/endpoint_miner.py <URL>`
+- 동적 캡처: `engine/templates/network_capture_patchright.py` (렌더 중 XHR/JSON 수집)
+- 결과를 `recipes/<domain>/recipe.yaml`로 저장하면 이후 `python3 -m engine <URL>`이 격자 전에 API로 직행한다.
 
 ### Playwright MCP 호출 규칙
 

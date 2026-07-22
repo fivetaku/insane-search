@@ -18,8 +18,29 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Optional
 from urllib.parse import urlsplit
+
+
+@lru_cache(maxsize=1)
+def available_impersonates() -> Optional[frozenset]:
+    """Installed curl_cffi targets plus its browser-family aliases."""
+    try:
+        from curl_cffi import requests as cffi_requests
+        from curl_cffi.requests.impersonate import REAL_TARGET_MAP
+        return frozenset(b.value for b in cffi_requests.BrowserType) | frozenset(REAL_TARGET_MAP.keys())
+    except Exception:
+        return None
+
+
+def filter_available(targets: list[str]) -> list[str]:
+    """Remove targets this curl_cffi cannot serve; degrade visibly if none match."""
+    available = available_impersonates()
+    if available is None:
+        return targets
+    filtered = [target for target in targets if target in available]
+    return filtered or targets
 
 
 def _host_of(url: str) -> str:

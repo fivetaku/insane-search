@@ -231,7 +231,8 @@ def _is_mobile_tls(t: str) -> bool:
 def _plan_for_profile(
     url: str, profile_id: str, profile: dict, device_class: str
 ) -> list[_Cand]:
-    groups: list[list[str]] = [list(g) for g in (profile.get("tls_impersonate_candidates") or [["safari", "chrome"]])]
+    from .transport import filter_available
+    groups: list[list[str]] = [filter_available(list(g)) for g in (profile.get("tls_impersonate_candidates") or [["safari", "chrome"]])]
     avoid = set(profile.get("tls_impersonate_avoid") or [])
     referer_order = list(profile.get("referer_strategies") or ["self_root"])
     transform_order = list(profile.get("url_transform_order") or ["original"])
@@ -405,6 +406,12 @@ def fetch(
     except Exception:
         pass
 
+    try:
+        from .observations_log import log_fetch
+        log_fetch(url, result)
+    except Exception:
+        pass
+
     return result
 
 
@@ -490,9 +497,44 @@ def _fetch_core(
             # Recognised platform but every official route failed → fall through
             # to the generic grid (don't give up; R6).
 
+    # -------- Phase 0.5: domain recipe (scraper-forge output) ---------------
+    try:
+        from . import recipe_loader
+        recipe = recipe_loader.load_recipe(url)
+    except Exception:
+        recipe = None
+    if recipe is not None:
+        rule = recipe_loader.match_rewrite(url, recipe)
+        if rule is not None:
+            hit = recipe_loader.try_rewrite(rule, timeout=timeout)
+            if hit is not None:
+                att = Attempt(
+                    phase="recipe", executor="recipe_loader", url=rule["rewritten_url"],
+                    url_transform="recipe_rewrite", impersonate=rule.get("impersonate") or "chrome",
+                    referer="recipe", status=hit["status"], body_size=len(hit["content"]),
+                    verdict=Verdict.WEAK_OK.value,
+                )
+                trace.append(att)
+                return FetchResult(
+                    ok=True, content=hit["content"], final_url=rule["rewritten_url"],
+                    verdict=att.verdict, profile_used=None, trace=trace,
+                    summary=f"recipe rewrite ({rule.get('name') or rule['pattern']}) → {hit['kind']}",
+                    stop_reason="success",
+                )
+            trace.append(Attempt(
+                phase="recipe", executor="recipe_loader", url=url,
+                url_transform="recipe_rewrite", impersonate=None, referer="recipe",
+                verdict=Verdict.UNKNOWN.value,
+                error="recipe rewrite failed — falling through to generic chain",
+            ))
+
     # -------- Phase 1: probe -------------------------------------------------
     base_impersonate = user_hint.get("impersonate_first") or (
         "safari_ios" if device_class == "mobile" else "safari")
+    from .transport import available_impersonates
+    _avail = available_impersonates()
+    if _avail is not None and base_impersonate not in _avail:
+        base_impersonate = "chrome"
     base_referer = user_hint.get("referer_strategy") or "self_root"
 
     # Root warmup (deep URLs only): let a WAF sensor set a resolved cookie on

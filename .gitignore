@@ -26,3 +26,6 @@ evals/
 .env
 .env.local
 .omc/
+
+# Runtime observation logs
+observations/

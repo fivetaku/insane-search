@@ -1,0 +1,42 @@
+domain: section.blog.naver.com
+verified_at: "2026-07-20"
+status: active
+
+# forge 경로: network_capture(patchright 렌더)로 /ajax/*.naver 12개 발굴 →
+# curl_cffi 재현 시 CSRF 에러 → Referer + X-Requested-With 필수 확인 →
+# 72KB JSON 획득 성공. 응답 앞에 `)]}',\n` XSSI 가드 1줄 — 파싱 전 첫 줄 제거.
+
+endpoints:
+  - name: directory_post_list
+    url: /ajax/DirectoryPostList.naver?directorySeq={dir}&pageNo={page}
+    method: GET
+    headers:
+      Accept: "application/json, text/javascript, */*; q=0.01"
+      Referer: "https://section.blog.naver.com/"
+      X-Requested-With: XMLHttpRequest
+    expect: json
+    notes: result.postList 배열. pageNo로 페이지네이션. XSSI 프리픽스 1줄 제거 필요.
+  - name: today_hot_topic
+    url: /ajax/TodayHotTopicList.naver
+    method: GET
+    headers:
+      Referer: "https://section.blog.naver.com/"
+      X-Requested-With: XMLHttpRequest
+    expect: json
+
+url_rewrites:
+  - name: home_to_directory_feed
+    pattern: ^https://section\.blog\.naver\.com/?(\?.*)?$
+    replacement: /ajax/DirectoryPostList.naver?directorySeq=0&pageNo=1
+    headers:
+      Accept: "application/json, text/javascript, */*; q=0.01"
+      Referer: "https://section.blog.naver.com/"
+      X-Requested-With: XMLHttpRequest
+    expect: json
+
+extraction:
+  format: json
+  list_key: result.postList
+  strip_prefix_lines: 1   # `)]}',` XSSI 가드
+
+limits: {rate: "0.5 req/s", known: "헤더 누락 시 200 + csrf 에러 JSON (56B) 주의"}

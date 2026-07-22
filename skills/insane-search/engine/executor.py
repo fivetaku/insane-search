@@ -18,10 +18,12 @@ path (MCP must be driven from the Claude session itself).
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Optional
@@ -68,11 +70,84 @@ def _pick_executor(capabilities: list[str], device_class: str) -> str:
         if "needs_real_tls_stack" in caps:
             return "playwright_mobile_chrome"
         return "playwright_mcp_mobile"
+    if "needs_protocol_stealth" in caps:
+        return "protocol_stealth_chrome"
     if "needs_real_tls_stack" in caps:
         return "playwright_real_chrome"
     if "needs_js_exec" in caps:
         return "playwright_mcp"
     return "playwright_real_chrome"  # safest general fallback
+
+
+def _module_available(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
+def _auto_install(pkg: str) -> bool:
+    if os.environ.get("INSANE_AUTO_INSTALL", "").strip() not in ("1", "true", "yes"):
+        return False
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", pkg, "-q"],
+                       capture_output=True, timeout=180, check=False)
+    except Exception:
+        return False
+    importlib.invalidate_caches()
+    return _module_available(pkg)
+
+
+def _run_python_template(template: str, args: dict, timeout: int = 90) -> tuple[int, str, str]:
+    path = os.path.join(TEMPLATES_DIR, template)
+    if not os.path.isfile(path):
+        return 127, "", f"template not found: {path}"
+    try:
+        proc = subprocess.run(
+            [sys.executable, path], input=json.dumps(args), cwd=TEMPLATES_DIR,
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timeout after {timeout}s"
+    except Exception as e:
+        return 1, "", f"{type(e).__name__}:{e}"
+
+
+def _run_protocol_stealth(
+    att: Attempt, url: str, *, success_selectors: Optional[list[str]], timeout: int, t0: float,
+) -> tuple[Attempt, str]:
+    """nodriver (raw CDP, no Playwright shim) first, patchright channel=chrome next.
+
+    For gates that fingerprint the automation protocol (Runtime.enable), every
+    Playwright-shimmed driver fails regardless of patch quality; nodriver is the
+    strongest free option, patchright the license-safe next. Missing drivers are
+    reported so the caller continues down its fallback list.
+    """
+    args: dict = {"url": url, "timeout": timeout * 1000}
+    if success_selectors:
+        args["waitSelector"] = success_selectors[0]
+    for pkg, template in (("nodriver", "nodriver_fetch.py"), ("patchright", "patchright_fetch.py")):
+        if not _module_available(pkg) and not _auto_install(pkg):
+            continue
+        rc, stdout, stderr = _run_python_template(template, args, timeout=timeout + 30)
+        att.executor = f"protocol_stealth_chrome:{pkg}"
+        att.elapsed_s = round(time.time() - t0, 3)
+        if rc != 0 or not stdout:
+            att.error = f"{pkg}: {(stderr or 'no stdout')[:200]}"
+            continue
+        resp = _FakeResp(stdout)
+        vr = validate(resp, success_selectors=success_selectors)
+        att.status = 200
+        att.body_size = len(stdout)
+        att.verdict = vr.verdict.value
+        att.reasons = vr.reasons
+        return att, stdout
+    att.elapsed_s = round(time.time() - t0, 3)
+    if not att.error:
+        att.error = "nodriver/patchright not installed (pip install nodriver, or INSANE_AUTO_INSTALL=1)"
+    att.verdict = Verdict.UNKNOWN.value
+    return att, ""
 
 
 def _run_node_template(template: str, args: dict, timeout: int = 90) -> tuple[int, str, str]:
@@ -152,6 +227,9 @@ def run_playwright_fallback(
         impersonate=None,
         referer="",
     )
+
+    if choice == "protocol_stealth_chrome":
+        return _run_protocol_stealth(att, url, success_selectors=success_selectors, timeout=timeout, t0=t0)
 
     if choice.startswith("playwright_mcp"):
         att.error = (
