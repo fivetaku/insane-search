@@ -60,7 +60,7 @@ _SHELL_WITH_JSONLD = ('<html><head><title>Shell</title></head><body>'
 
 
 def t_raw_body_wins_for_ordinary_html() -> None:
-    title, content, q, meta = _extract_response(_FakeResp(_ARTICLE), "https://x.test/a")
+    title, content, q, meta = _extract_response(_FakeResp(_ARTICLE), "https://x.test/a", enable_markdown=False)
     assert meta["source"] == "raw", f"got {meta['source']}"
     assert content == _ARTICLE, "ordinary HTML must keep the raw body"
     assert title == "Full Article"
@@ -78,7 +78,7 @@ def t_jsonld_rescues_thin_shell() -> None:
 def t_jsonld_teaser_never_beats_full_article() -> None:
     # _ARTICLE carries an 11-word JSON-LD description teaser next to a full
     # body — the teaser must NOT replace the article.
-    _t, content, _q, meta = _extract_response(_FakeResp(_ARTICLE), "https://x.test/a")
+    _t, content, _q, meta = _extract_response(_FakeResp(_ARTICLE), "https://x.test/a", enable_markdown=False)
     assert meta["source"] == "raw" and "teaser" not in content[:200], \
         f"teaser must not beat full body; got source={meta['source']}"
     print("  ✓ JSON-LD teaser gated out when full body present")
@@ -95,7 +95,7 @@ def t_pdf_magic_byte_detection() -> None:
 def t_pdf_url_serving_html_reguarded() -> None:
     # .pdf URL but the body is HTML (e.g. a viewer page) → HTML path, not pypdf.
     r = _FakeResp(text=_ARTICLE, headers={"content-type": "text/html"})
-    _t, content, _q, meta = _extract_response(r, "https://x.test/doc.pdf")
+    _t, content, _q, meta = _extract_response(r, "https://x.test/doc.pdf", enable_markdown=False)
     assert meta["source"] == "raw", f".pdf URL with HTML body must stay HTML; got {meta['source']}"
     assert content == _ARTICLE
     print("  ✓ .pdf URL serving HTML re-guarded to the HTML path")
@@ -131,7 +131,7 @@ def t_inner_text_wins_for_shell() -> None:
 def t_inner_text_loses_to_rich_body() -> None:
     inner = "Short cookie banner text."
     _t, content, _q, meta = _extract_response(
-        _FakeResp(_ARTICLE), "https://x.test/a", inner_text=inner)
+        _FakeResp(_ARTICLE), "https://x.test/a", inner_text=inner, enable_markdown=False)
     assert meta["inner_text_used"] is False, "thin innerText must not clobber a rich body"
     assert content == _ARTICLE
     print("  ✓ render-merge: thin innerText never clobbers a rich body")
@@ -242,7 +242,7 @@ def t_ceiling_scan_limit() -> None:
             + "C" * 2000 + '"}</script>')
     body = f'<html><body>{pad}{tail}</body></html>'
     with _patched(_SCAN_LIMIT=len(pad) // 2):
-        _t, content, _q, meta = _extract_response(_FakeResp(body), "https://x.test/b")
+        _t, content, _q, meta = _extract_response(_FakeResp(body), "https://x.test/b", enable_markdown=False)
     assert meta["source"] == "raw" and content == body, \
         f"parsers must not read past the scan window; meta={meta}"
     print("  ✓ ceiling: rescue parsers never scan past _SCAN_LIMIT (raw kept in full)")

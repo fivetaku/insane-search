@@ -253,9 +253,19 @@ result = fetch(
 `impersonate="chrome"`이 최신 Chrome(146+) 지문으로 갱신되고(0.14는 chrome142에 고정), HTTP/3 지문과
 SSRF-safe redirect 기본값이 추가됐다. 아래 가드는 **미설치뿐 아니라 0.15 미만이면 업그레이드**한다:
 ```bash
-python3 -c "import curl_cffi,bs4,yaml,pypdf; v=curl_cffi.__version__.split('.'); assert (int(v[0]),int(v[1]))>=(0,15)" 2>/dev/null \
-  || pip install -U "curl_cffi>=0.15.0" beautifulsoup4 pyyaml pypdf -q
+python3 -c "import curl_cffi,bs4,yaml,pypdf,markdownify; v=curl_cffi.__version__.split('.'); assert (int(v[0]),int(v[1]))>=(0,15)" 2>/dev/null \
+  || pip install -U "curl_cffi>=0.15.0" beautifulsoup4 pyyaml pypdf markdownify -q
 ```
+
+**콘텐츠 처리 — 기본 동작 + 선택 라이브러리.** 엔진의 실사용자는 대개 LLM 컨텍스트에 넣으려는 에이전트라, 깨끗한 마크다운을 **기본으로** 준다. 라이브러리가 없으면 전부 raw 폴백으로 정상 동작한다(graceful degradation):
+- `markdownify`(MIT, 위 가드로 자동 설치) — **기본 ON**: raw HTML → 구조보존 마크다운(표→파이프표, `<pre>/<code>`→펜스). `extraction_source`가 `raw+md`. 끄려면 `--no-markdown` / `enable_markdown=False`(raw HTML 그대로).
+- `resiliparse`(Apache-2.0) — **opt-in**: `--maincontent` / `enable_maincontent=True`. nav/footer/광고 제거 후 본문만(`extraction_source`=`maincontent`), markdown보다 우선. 비-article 페이지에선 본문을 과하게 잘라낼 수 있어 기본 off로 둔다.
+- `pdfplumber`(MIT) — **자동**: PDF 본문을 pdfplumber(다단컬럼·표 우수) 우선 추출, 미설치 시 pypdf 폴백. **`pymupdf4llm`/`PyMuPDF`는 AGPL이라 사용 금지.**
+```bash
+pip install resiliparse pdfplumber -q   # 본문추출(opt-in)·PDF 개선을 원할 때
+```
+
+실패(`ok=False`) 응답에는 `block_class`가 붙는다 — `bot_detection`(라우트 결과가 엇갈리거나 WAF 시그널 → 브라우저·다른 라우트로 우회 가능) vs `infra_or_auth`(모든 라우트가 균일하게 401/404 → 스텔스로 우회 불가). 재시도 가치 판단에 사용한다.
 
 Playwright 로컬 경로 사용 시 Node가 필요. 로컬 의존성은 `engine/templates/`의 package.json으로 관리한다 (executor가 그 디렉토리를 cwd로 실행). **Patchright**는 Playwright drop-in 포크로, Cloudflare/DataDome이 감지하는 CDP `Runtime.enable` 누출을 막아준다 — 템플릿이 설치돼 있으면 최우선 사용하고, 없으면 playwright-extra+stealth → plain playwright로 폴백한다:
 ```bash

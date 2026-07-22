@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.11.0 — 2026-07-23
+
+Content-quality + diagnosis upgrades (research P0 batch). All new libraries are
+optional with graceful degradation — the engine still runs (raw fallback) when
+they are absent. No public-API break; `content` becomes markdown by default on
+the raw-HTML success path (opt out with `--no-markdown` / `enable_markdown=False`).
+
+- **markdownify (MIT), default ON**: a raw-HTML success is converted to
+  structure-preserving markdown (tables → pipe tables, `<pre>/<code>` → fenced
+  blocks; script/style/head noise stripped first). `extraction_source` becomes
+  `raw+md`. The engine's consumers are usually agents feeding an LLM, so clean
+  markdown is the natural default; `enable_markdown=False` restores raw HTML.
+  markdownify is now in the base dependency auto-install guard.
+- **resiliparse (Apache-2.0) main-content extraction, opt-in**
+  (`--maincontent` / `enable_maincontent=True`): strips nav/footer/sidebar/ads
+  to the article body (`extraction_source=maincontent`), wins over markdown when
+  both are on. Opt-in because it can over-trim non-article pages; rejects a
+  near-empty extraction and keeps raw.
+- **pdfplumber (MIT) PDF extraction, automatic**: `_extract_pdf` tries
+  pdfplumber first (better multi-column / table handling) and falls back to
+  pypdf. `pymupdf4llm` / `PyMuPDF` are AGPL and are intentionally NOT used.
+- **Differential block classification**: on failure, `_classify_block` compares
+  the outcomes of the routes already tried and sets `FetchResult.block_class` —
+  `bot_detection` (routes disagree or a WAF/challenge signal → escalation may
+  help) vs `infra_or_auth` (every route uniformly 401/404 → stealth can't help).
+  Additive JSON field; no new dependency. (Idea: Bamberg arXiv:2606.14525 §5.3.)
+- Tests: +25 (test_t3_markdown 8, test_t4_maincontent 5, test_t5_pdfplumber 6,
+  test_t6_differential 7 — network-free); full engine suite green, live e2e +
+  all-libraries-blocked graceful degradation verified.
+
 ## 0.10.1 — 2026-07-22
 
 Parser-input ceilings for the v0.10.0 content-rescue paths (hardening
