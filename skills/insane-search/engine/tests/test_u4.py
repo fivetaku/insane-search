@@ -63,6 +63,16 @@ def t_parse_envelope_json():
     print("  ✓ envelope JSON parsed (innerText backward-compat default '')")
 
 
+def t_parse_envelope_inner_text_capped():
+    import json as _j
+    env = _j.dumps({"html": "<h1>hi</h1>", "finalUrl": "https://x/p", "status": 200,
+                    "innerText": "Z" * 1_000_100})
+    *_rest, inner_text = _parse_envelope(env, "https://x/q")
+    assert len(inner_text) == 1_000_000, \
+        f"innerText must be capped at the parse boundary (got {len(inner_text)})"
+    print("  ✓ envelope innerText capped at 1,000,000 chars")
+
+
 def t_parse_envelope_raw_html_fallback():
     html, final, status, cookies, ua, automation, inner_text = _parse_envelope(
         "<html>raw</html>", "https://x/q")
@@ -107,6 +117,7 @@ ALL = [
     ("session_reuse_same_key", t_session_reuse_same_key),
     ("inject_cookies_then_present", t_inject_cookies_then_present),
     ("parse_envelope_json", t_parse_envelope_json),
+    ("parse_envelope_inner_text_capped", t_parse_envelope_inner_text_capped),
     ("parse_envelope_raw_html_fallback", t_parse_envelope_raw_html_fallback),
     ("warmup_once_guard_online", t_warmup_once_guard_online),
     ("fetch_many_reuses_pool_online", t_fetch_many_reuses_pool_online),

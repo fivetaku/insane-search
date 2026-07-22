@@ -248,7 +248,10 @@ def _parse_envelope(stdout: str, url: str):
             cookies = env.get("cookies") or []
             user_agent = env.get("userAgent") or None
             automation = env.get("automation") or None
-            inner_text = env.get("innerText") or ""
+            # Bound the browser-controlled innerText at the parse boundary —
+            # the rescue gate in fetch_chain caps again, but the cap belongs
+            # here too so a hostile page cannot balloon the envelope in memory.
+            inner_text = (env.get("innerText") or "")[:1_000_000]
             return html, final_url, status, cookies, user_agent, automation, inner_text
         except Exception:
             pass

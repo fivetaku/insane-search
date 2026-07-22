@@ -152,6 +152,134 @@ def t_quality_score_bounds() -> None:
     print(f"  ✓ quality score in [0, 1] (long md → {q})")
 
 
+def _build_text_pdf(lines) -> bytes:
+    """Minimal valid one-page PDF with a real text layer (no reportlab)."""
+    ops = ["BT /F1 12 Tf 72 740 Td 14 TL"]
+    for ln in lines:
+        ops.append(f"({ln}) Tj T*")
+    ops.append("ET")
+    stream = " ".join(ops).encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, obj in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += str(i).encode() + b" 0 obj\n" + obj + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 " + str(len(objects) + 1).encode() + b"\n0000000000 65535 f \n"
+    for off in offsets:
+        out += ("%010d 00000 n \n" % off).encode()
+    out += (b"trailer\n<< /Size " + str(len(objects) + 1).encode()
+            + b" /Root 1 0 R >>\nstartxref\n" + str(xref).encode() + b"\n%%EOF")
+    return bytes(out)
+
+
+class _patched:
+    """Temporarily override a fetch_chain module constant."""
+    def __init__(self, **overrides):
+        self.overrides = overrides
+        self.saved = {}
+
+    def __enter__(self):
+        import engine.fetch_chain as fc
+        self.fc = fc
+        for k, v in self.overrides.items():
+            self.saved[k] = getattr(fc, k)
+            setattr(fc, k, v)
+        return self
+
+    def __exit__(self, *a):
+        for k, v in self.saved.items():
+            setattr(self.fc, k, v)
+
+
+def t_ceiling_jsonld_block_count() -> None:
+    block = ('<script type="application/ld+json">'
+             '{"@type":"NewsArticle","articleBody":"BLOCK%d ' + "pad " * 40 + '"}</script>')
+    body = ('<html><body><div id="root"></div>'
+            + "".join(block % i for i in range(4)) + "</body></html>")
+    with _patched(_JSONLD_MAX_BLOCKS=2):
+        _t, content, _q, meta = _extract_response(_FakeResp(body), "https://x.test/b")
+    assert meta["source"] == "json_ld" and "BLOCK1" in content and "BLOCK3" not in content, \
+        f"blocks beyond the cap must not be parsed; meta={meta}"
+    print("  ✓ ceiling: JSON-LD block count capped (block 3+ never parsed)")
+
+
+def t_ceiling_jsonld_blob_size() -> None:
+    huge = ('<script type="application/ld+json">{"@type":"NewsArticle","articleBody":"'
+            + "A" * 5000 + '"}</script>')
+    body = f'<html><body><div id="root"></div>{huge}</body></html>'
+    with _patched(_JSONLD_MAX_BLOB=1000):
+        _t, content, _q, meta = _extract_response(_FakeResp(body), "https://x.test/b")
+    assert meta["source"] == "raw", \
+        f"an oversized ld+json blob must be skipped before json.loads; got {meta['source']}"
+    print("  ✓ ceiling: oversized JSON-LD blob skipped without parsing")
+
+
+def t_ceiling_rescue_output_capped() -> None:
+    body = ('<html><body><div id="root"></div>'
+            '<script type="application/ld+json">{"@type":"NewsArticle","articleBody":"'
+            + "B" * 3000 + '"}</script></body></html>')
+    with _patched(_RESCUE_MAX_TEXT=500):
+        _t, content, _q, meta = _extract_response(_FakeResp(body), "https://x.test/b")
+    assert meta["source"] == "json_ld" and len(content) <= 500, \
+        f"rescue output must respect the cap; len={len(content)}"
+    print(f"  ✓ ceiling: rescue output capped (len={len(content)})")
+
+
+def t_ceiling_scan_limit() -> None:
+    # JSON-LD placed BEYOND the scan window must never be scanned; the raw
+    # body is still returned in full (that contract predates the chain).
+    pad = "<p>" + "visible filler text " * 50 + "</p>"
+    tail = ('<script type="application/ld+json">{"@type":"NewsArticle","articleBody":"'
+            + "C" * 2000 + '"}</script>')
+    body = f'<html><body>{pad}{tail}</body></html>'
+    with _patched(_SCAN_LIMIT=len(pad) // 2):
+        _t, content, _q, meta = _extract_response(_FakeResp(body), "https://x.test/b")
+    assert meta["source"] == "raw" and content == body, \
+        f"parsers must not read past the scan window; meta={meta}"
+    print("  ✓ ceiling: rescue parsers never scan past _SCAN_LIMIT (raw kept in full)")
+
+
+def t_ceiling_pdf_too_large() -> None:
+    pdf = _build_text_pdf(["hello world"])
+    with _patched(_PDF_MAX_BYTES=64):
+        title, text, q, err = _extract_pdf(pdf, "https://x.test/big.pdf")
+    assert err == "pdf_too_large" and text == "", f"got err={err}"
+    print("  ✓ ceiling: oversized PDF rejected before PdfReader")
+
+
+def t_ceiling_pdf_text_capped() -> None:
+    try:
+        import pypdf  # noqa: F401
+    except ImportError:
+        print("  ⚠ skipped: pypdf not installed")
+        return
+    pdf = _build_text_pdf([f"Sentence number {i} with padding words." for i in range(80)])
+    with _patched(_RESCUE_MAX_TEXT=200):
+        title, text, q, err = _extract_pdf(pdf, "https://x.test/long.pdf")
+    assert err == "" and 0 < len(text) <= 210, f"extracted text must be capped; len={len(text)}"
+    print(f"  ✓ ceiling: PDF extracted text capped (len={len(text)})")
+
+
+def t_ceiling_inner_text_capped() -> None:
+    shell = "<html><body><div id='root'></div></body></html>"
+    inner = "Rendered visible sentence. " * 200
+    with _patched(_INNER_TEXT_MAX=300):
+        _t, content, _q, meta = _extract_response(
+            _FakeResp(shell), "https://x.test/x", inner_text=inner)
+    assert meta["inner_text_used"] is True and len(content) <= 300, \
+        f"innerText must be truncated before merge; len={len(content)}"
+    print(f"  ✓ ceiling: innerText capped before merge (len={len(content)})")
+
+
 def t_fetch_result_carries_extraction_meta() -> None:
     r = FetchResult(
         ok=True, content="hello",

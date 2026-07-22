@@ -183,6 +183,17 @@ except ImportError:
 _JSONLD_MIN_CHARS = 100          # an articleBody shorter than this is a teaser
 _INNER_TEXT_MIN_CHARS = 200      # innerText shorter than this never wins
 
+# Parser-input ceilings. Every byte reaching a rescue parser is attacker
+# controlled, so each parser gets a hard input bound and a bounded output —
+# without these, a hostile page could feed multi-hundred-MB bodies into
+# regex/JSON/PDF parsing on what is otherwise just a fetch.
+_SCAN_LIMIT = 2_000_000          # chars of body the rescue regexes may scan
+_JSONLD_MAX_BLOCKS = 10          # ld+json blocks parsed per page
+_JSONLD_MAX_BLOB = 200_000       # chars of a single ld+json blob given to json.loads
+_RESCUE_MAX_TEXT = 1_000_000     # chars any rescue path may return as content
+_PDF_MAX_BYTES = 25 * 1024 * 1024  # PDF bodies above this are never parsed
+_INNER_TEXT_MAX = 1_000_000      # chars of Playwright innerText accepted
+
 
 def _quality_score(md: str) -> float:
     """Crude 0..1 extraction-quality heuristic: length + sentence density."""
@@ -204,21 +215,38 @@ def _visible_text(html: str) -> str:
 
 
 def _extract_json_ld_text(html: str) -> str:
-    """Pull articleBody / description from <script type=application/ld+json>."""
+    """Pull articleBody / description from <script type=application/ld+json>.
+
+    Bounded: at most _JSONLD_MAX_BLOCKS blocks are parsed, a blob larger than
+    _JSONLD_MAX_BLOB is skipped without json.loads, and the joined output is
+    capped at _RESCUE_MAX_TEXT."""
     out: list[str] = []
+    blocks = 0
+    total = 0
     for m in _re.finditer(
             r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
             html, _re.I | _re.S):
+        blocks += 1
+        if blocks > _JSONLD_MAX_BLOCKS:
+            break
+        raw = m.group(1)
+        if len(raw) > _JSONLD_MAX_BLOB:
+            continue
         try:
-            data = _json.loads(m.group(1))
+            data = _json.loads(raw)
             if isinstance(data, list):
                 data = data[0] if data else {}
             if isinstance(data, dict):
                 t = (data.get("@type") or "")
                 if t in ("Article", "NewsArticle", "BlogPosting") or "articleBody" in data:
                     body = data.get("articleBody") or data.get("description") or ""
-                    if body:
-                        out.append(body)
+                    if isinstance(body, str) and body:
+                        take = body[:_RESCUE_MAX_TEXT - total]
+                        if take:
+                            out.append(take)
+                            total += len(take)
+                        if total >= _RESCUE_MAX_TEXT:
+                            break
         except Exception:
             pass
     return "\n\n".join(out)
@@ -227,9 +255,15 @@ def _extract_json_ld_text(html: str) -> str:
 def _extract_pdf(body: bytes, url: str) -> tuple[str, str, float, str]:
     """Returns (title, text, quality, error_code). error_code is "" on success.
     Caps at 80 pages to keep token budget sane; reports pdf_no_text_layer for
-    scanned PDFs (so the caller knows rendering will not help either)."""
+    scanned PDFs (so the caller knows rendering will not help either).
+
+    Bounded: bodies above _PDF_MAX_BYTES never reach PdfReader (decompression
+    bombs bound their input, not their page count), and the extracted text is
+    capped at _RESCUE_MAX_TEXT."""
     if _PdfReader is None:
         return "", "", 0.0, "pypdf_missing"
+    if len(body) > _PDF_MAX_BYTES:
+        return "", "", 0.0, "pdf_too_large"
     try:
         reader = _PdfReader(_io.BytesIO(body))
         title = ""
@@ -239,11 +273,17 @@ def _extract_pdf(body: bytes, url: str) -> tuple[str, str, float, str]:
         except Exception:
             pass
         pages: list[str] = []
+        total = 0
         for page in reader.pages[:80]:
             try:
-                pages.append(page.extract_text() or "")
+                t = page.extract_text() or ""
             except Exception:
-                pages.append("")
+                t = ""
+            take = t[:_RESCUE_MAX_TEXT - total]
+            pages.append(take)
+            total += len(take)
+            if total >= _RESCUE_MAX_TEXT:
+                break
         text = "\n\n".join(p for p in pages if p).strip()
         if not text:
             return title, "", 0.0, "pdf_no_text_layer"
@@ -310,22 +350,26 @@ def _extract_response(resp, final_url: str, inner_text: str = "") -> tuple[str, 
         return "", "", 0.0, {"source": "empty", "error": "empty_body",
                              "inner_text_used": False}
 
+    # Rescue parsers only ever scan a bounded prefix of the body; `content`
+    # itself keeps the full raw text (that surface predates this chain).
+    scan = text if len(text) <= _SCAN_LIMIT else text[:_SCAN_LIMIT]
+
     title = ""
-    m = _re.search(r"<title[^>]*>(.*?)</title>", text, _re.I | _re.S)
+    m = _re.search(r"<title[^>]*>(.*?)</title>", scan, _re.I | _re.S)
     if m:
         title = _re.sub(r"\s+", " ", m.group(1)).strip()[:300]
 
-    visible = _visible_text(text)
+    visible = _visible_text(scan)
     content, source, quality = text, "raw", _quality_score(visible)
 
-    jsonld = _extract_json_ld_text(text)
+    jsonld = _extract_json_ld_text(scan)
     if len(jsonld) > _JSONLD_MIN_CHARS and len(jsonld) > len(visible):
         content, source, quality = jsonld, "json_ld", _quality_score(jsonld)
 
     # Render-merge: compare innerText against the VISIBLE text length (not the
     # raw markup length — markup would always win the comparison and disable
     # the merge).
-    inner = (inner_text or "").strip()
+    inner = (inner_text or "").strip()[:_INNER_TEXT_MAX]
     chosen_len = len(visible) if source == "raw" else len(content)
     inner_used = False
     if inner and len(inner) > max(chosen_len, _INNER_TEXT_MIN_CHARS):

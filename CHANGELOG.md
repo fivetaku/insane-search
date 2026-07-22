@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.10.1 — 2026-07-22
+
+Parser-input ceilings for the v0.10.0 content-rescue paths (hardening
+requested in downstream security review — every byte reaching a rescue
+parser is attacker controlled):
+
+- **`_SCAN_LIMIT` (2M chars)**: rescue regexes (title / visible-text /
+  JSON-LD discovery) only ever scan a bounded prefix of the body; the raw
+  `content` surface still carries the full text (that contract predates
+  the chain).
+- **JSON-LD**: at most 10 `ld+json` blocks parsed per page, blobs over
+  200K chars are skipped before `json.loads`, joined output capped at 1M.
+- **PDF**: bodies over 25MB are rejected before `PdfReader` ever sees them
+  (`pdf_too_large`) — decompression bombs are bounded at their input, not
+  their page count; extracted text capped at 1M chars (80-page cap kept).
+- **innerText**: capped at 1M chars twice — at the executor's envelope
+  parse boundary and again before the render-merge gate.
+- Regression tests at every ceiling: 7 new in `test_t2_rescue.py`
+  (block count / blob size / output cap / scan window / pdf-too-large /
+  pdf text cap / innerText cap) + 1 in `test_u4.py` (envelope boundary).
+  Suite 91 green; live E2E battery unchanged (ordinary-path overhead
+  still ≈0.2ms).
+
 ## 0.10.0 — 2026-07-22
 
 Takeover of the four accepted items from PR #8 (@miter37) — transient-status
