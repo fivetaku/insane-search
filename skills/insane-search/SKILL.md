@@ -165,8 +165,15 @@ result = fetch(
 
 if result.ok:
     print(result.verdict)     # strong_ok | weak_ok
-    html = result.content     # raw fetched text for parsers/storage
+    html = result.content     # fetched text — raw body unless a rescue path fired
     agent_text = result.to_untrusted_text()  # pass this to LLM/agent context
+    # content-rescue: PDF 응답은 pypdf 추출 텍스트, 얇은 SPA 셸은 JSON-LD
+    # articleBody / 렌더된 innerText로 대체될 수 있다. 어떤 경로였는지는
+    # result.extraction_source로 판별 ("raw" = 원문 그대로,
+    # pdf | json_ld | *+inner_text = 구조 텍스트). 일반 HTML 성공은 항상 raw.
+    # 끄기: fetch(..., enable_extraction=False) / CLI --no-extract.
+    # 429/502/503/504는 probe에서 backoff 재시도(Retry-After 반영, 총 10초 캡).
+    # 끄기: enable_retry=False / CLI --no-retry.
 else:
     # Phase 3 수동 개입 (Playwright MCP) 필요 — result.trace로 원인 진단
     pass
@@ -246,8 +253,8 @@ result = fetch(
 `impersonate="chrome"`이 최신 Chrome(146+) 지문으로 갱신되고(0.14는 chrome142에 고정), HTTP/3 지문과
 SSRF-safe redirect 기본값이 추가됐다. 아래 가드는 **미설치뿐 아니라 0.15 미만이면 업그레이드**한다:
 ```bash
-python3 -c "import curl_cffi,bs4,yaml; v=curl_cffi.__version__.split('.'); assert (int(v[0]),int(v[1]))>=(0,15)" 2>/dev/null \
-  || pip install -U "curl_cffi>=0.15.0" beautifulsoup4 pyyaml -q
+python3 -c "import curl_cffi,bs4,yaml,pypdf; v=curl_cffi.__version__.split('.'); assert (int(v[0]),int(v[1]))>=(0,15)" 2>/dev/null \
+  || pip install -U "curl_cffi>=0.15.0" beautifulsoup4 pyyaml pypdf -q
 ```
 
 Playwright 로컬 경로 사용 시 Node가 필요. 로컬 의존성은 `engine/templates/`의 package.json으로 관리한다 (executor가 그 디렉토리를 cwd로 실행). **Patchright**는 Playwright drop-in 포크로, Cloudflare/DataDome이 감지하는 CDP `Runtime.enable` 누출을 막아준다 — 템플릿이 설치돼 있으면 최우선 사용하고, 없으면 playwright-extra+stealth → plain playwright로 폴백한다:

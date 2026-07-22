@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.10.0 — 2026-07-22
+
+Takeover of the four accepted items from PR #8 (@miter37) — transient-status
+retry, PDF extraction, JSON-LD rescue, Playwright render-merge — with the
+review fixes applied. The rejected parts of the PR (JS_SHELL / BOT_WALL
+verdicts, trafilatura extraction chain, body size cap, cookie-banner removal,
+resource blocking) are NOT included; verdict-system changes land with the
+upstream validator/scheduler rework instead.
+
+- **`engine/transport.py`**: `POOL.request(max_retries=N)` retries transient
+  statuses (429/502/503/504) on the SAME identity with exponential backoff
+  (1.5s × 2^n). Review fixes over the PR version: a numeric `Retry-After`
+  header overrides the backoff delay, total retry sleep is capped at 10s, and
+  the default is `max_retries=0` so only opted-in callers retry.
+- **`engine/fetch_chain.py`**: retry fires on the PROBE attempt only — grid
+  candidates never retry, so a failing grid cannot multiply backoff sleeps
+  into a tens-of-seconds failure path (the amplification flagged in review).
+- **`engine/fetch_chain.py`**: content-rescue extraction. The raw body REMAINS
+  `content` for ordinary HTML successes (no contract break); a rescue replaces
+  it only where the raw body is unusable: PDF bodies (magic-byte sniff +
+  content-type, `.pdf`-URL-serving-HTML re-guarded) → pypdf text; SPA shells
+  whose visible text is thinner than their JSON-LD articleBody → articleBody.
+  The "rescue must beat the visible text" gate is the structural fix for the
+  teaser-beats-article failure mode found in the PR's meta fallback. New
+  `FetchResult.extraction_quality/source/meta` fields; `--no-extract` /
+  `enable_extraction=False` to disable.
+- **Render-merge**: both Playwright templates emit `innerText` in the JSON
+  envelope; the executor stashes it and the rescue gate keeps whichever of
+  (visible body text, innerText) carries more text. Compared against VISIBLE
+  text length, not raw markup length. The PR's stylesheet/resource blocking
+  and cookie-banner DOM removal are excluded (stealth-fingerprint conflict).
+- **`engine/__main__.py`**: new `--no-retry` / `--no-extract` flags.
+- **SKILL.md**: content contract documented; `pypdf` added to the dependency
+  auto-install guard.
+- Tests: `test_t1_retry.py` (8) + `test_t2_rescue.py` (11) added,
+  `test_u4.py` envelope tests extended; full suite 83 green.
+
 ## 0.9.2 — 2026-07-15
 
 Cross-platform yt-dlp invocation — the YouTube / media route no longer
