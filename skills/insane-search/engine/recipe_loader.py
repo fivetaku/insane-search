@@ -55,8 +55,21 @@ def load_recipe(url: str) -> Optional[dict]:
         return None
 
 
+def _dig(obj, dotted: str):
+    """Walk a dotted key path (``result.postList``); None if any step misses."""
+    cur = obj
+    for part in dotted.split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return None
+    return cur
+
+
 def match_rewrite(url: str, recipe: dict) -> Optional[dict]:
     """First url_rewrites rule whose pattern matches, with the rewritten URL."""
+    extraction = recipe.get("extraction") or {}
+    require_key = extraction.get("list_key") if isinstance(extraction, dict) else None
     for rule in recipe.get("url_rewrites") or []:
         pattern = rule.get("pattern")
         replacement = rule.get("replacement")
@@ -68,7 +81,12 @@ def match_rewrite(url: str, recipe: dict) -> Optional[dict]:
                 if not rewritten.startswith("http"):
                     base = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
                     rewritten = urljoin(base, rewritten)
-                return {**rule, "rewritten_url": rewritten}
+                out = {**rule, "rewritten_url": rewritten}
+                # Carry the recipe's data-bearing key so try_rewrite can reject a
+                # 200 that parses as JSON but holds no data (false success).
+                if require_key and "require_key" not in rule:
+                    out["require_key"] = require_key
+                return out
         except re.error:
             continue
     return None
@@ -102,14 +120,23 @@ def try_rewrite(rule: dict, *, timeout: int = 20) -> Optional[dict]:
     expect = rule.get("expect") or "json"
     if expect == "json":
         try:
-            json.loads(body)
+            parsed = json.loads(body)
         except Exception:
             # Standard anti-XSSI guard (`)]}',` first line) — strip and retry.
             stripped = body.split("\n", 1)[1] if body.startswith(")]}'") and "\n" in body else ""
             try:
-                json.loads(stripped)
+                parsed = json.loads(stripped)
                 body = stripped
             except Exception:
+                return None
+        # False-success guard: when the recipe names the data-bearing key, a 200
+        # that parses but lacks it (e.g. naver's 56-byte {"result":{"code":"csrf"}}
+        # on a dropped header) is an error envelope, not data — reject so the
+        # generic chain still runs instead of "succeeding" on nothing.
+        require_key = rule.get("require_key")
+        if require_key:
+            value = _dig(parsed, require_key)
+            if not value:
                 return None
         return {"content": body, "status": resp.status_code, "kind": "json"}
     if len(body) < 300:

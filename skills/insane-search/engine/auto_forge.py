@@ -140,6 +140,10 @@ def write_recipe(page_url: str, endpoint_url: str, headers: dict) -> None:
             return  # never clobber a curated recipe
         import yaml
         endpoint_rel = endpoint_url.replace(f"{urlparse(page_url).scheme}://{urlparse(page_url).netloc}", "")
+        # This is an exact-match rewrite with no capture groups, so the endpoint
+        # is a literal replacement — escape backslashes so re.sub can't read a
+        # stray `\1`/`\g<>` in the URL as a (nonexistent) group reference.
+        replacement = endpoint_rel.replace("\\", "\\\\")
         doc = {
             "domain": domain,
             "verified_at": __import__("time").strftime("%Y-%m-%d"),
@@ -147,7 +151,7 @@ def write_recipe(page_url: str, endpoint_url: str, headers: dict) -> None:
             "url_rewrites": [{
                 "name": "auto_discovered",
                 "pattern": "^" + re.escape(page_url) + "$",
-                "replacement": endpoint_rel,
+                "replacement": replacement,
                 "headers": headers,
                 "expect": "json",
             }],

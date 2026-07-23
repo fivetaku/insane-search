@@ -29,3 +29,7 @@ evals/
 
 # Runtime observation logs
 observations/
+
+# Generated scraper-forge recon dumps — only curated recipe.yaml is tracked
+recipes/*/miner-report.json
+recipes/*/network.json

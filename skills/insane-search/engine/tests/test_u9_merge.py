@@ -88,6 +88,23 @@ def run() -> None:
               rule is not None and rule["rewritten_url"] == "https://example.com/api/items/42.json")
         check("no match returns None",
               recipe_loader.match_rewrite("https://example.com/other", rec) is None)
+
+        # False-success guard: a recipe that declares extraction.list_key must
+        # carry it into the rule, and _dig must reject an error envelope that
+        # parses as JSON but lacks the data key (naver 56B csrf case).
+        os.makedirs(os.path.join(tmp, "keyed.com"))
+        with open(os.path.join(tmp, "keyed.com", "recipe.yaml"), "w", encoding="utf-8") as f:
+            f.write("domain: keyed.com\nurl_rewrites:\n  - name: feed\n    pattern: ^https://keyed.com/$\n"
+                    "    replacement: /ajax/feed.json\n    expect: json\nextraction:\n  list_key: result.postList\n")
+        krec = recipe_loader.load_recipe("https://keyed.com/")
+        krule = recipe_loader.match_rewrite("https://keyed.com/", krec)
+        check("require_key carried from extraction.list_key",
+              krule is not None and krule.get("require_key") == "result.postList")
+        check("_dig finds nested data key",
+              recipe_loader._dig({"result": {"postList": [1, 2]}}, "result.postList") == [1, 2])
+        check("_dig rejects error envelope (csrf) — no data key",
+              not recipe_loader._dig({"result": {"code": "csrf"}}, "result.postList"))
+
         os.environ["INSANE_NO_RECIPE"] = "1"
         check("INSANE_NO_RECIPE disables loading",
               recipe_loader.load_recipe("https://example.com/item/42") is None)
