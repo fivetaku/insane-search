@@ -98,7 +98,11 @@ def _line_is_exempt(line: str, ext: str) -> bool:
 def _scan_file(path: Path, root: Path) -> list[str]:
     """Return list of violation strings for this file."""
     rel = path.relative_to(root.parent)
-    if any(str(rel).endswith(suffix) for suffix in EXPLICIT_ALLOW_FILES):
+    # Match by POSIX path SUFFIX: `.as_posix()` normalises Windows backslashes
+    # (so the exemption is not silently defeated there), and the suffix match
+    # keeps it working regardless of the skill directory name (insane-search,
+    # ultimate-browsing, ...).
+    if any(rel.as_posix().endswith(suffix) for suffix in EXPLICIT_ALLOW_FILES):
         return []
 
     ext = path.suffix.lower()

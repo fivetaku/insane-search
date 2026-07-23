@@ -1,6 +1,6 @@
 {
   "name": "insane-search",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "description": "Platform-specific access strategies for AI agents — adaptively accesses blocked sites (X/Twitter, Reddit, Stack Overflow, Naver, Coupang, LinkedIn) without API keys. Phase 0→3 adaptive scheduler with curl_cffi TLS impersonation and auto dependency install.",
   "author": {
     "name": "fivetaku",
