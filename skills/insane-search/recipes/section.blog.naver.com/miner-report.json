@@ -3,58 +3,7 @@
   "page_ok": true,
   "page_verdict": "weak_ok",
   "profile_used": null,
-  "candidates": [
-    "/common/json/lottie/Emoji-01.json",
-    "/common/json/lottie/Emoji-02.json",
-    "/common/json/lottie/Emoji-03.json",
-    "/common/json/lottie/Emoji-04.json",
-    "/common/json/lottie/Emoji-05.json",
-    "/common/json/lottie/Emoji-06.json",
-    "https://apis.naver.com/blogserver/like"
-  ],
-  "probed": [
-    {
-      "path": "/common/json/lottie/Emoji-02.json",
-      "status": 200,
-      "bytes": 65927,
-      "kind": "json"
-    },
-    {
-      "path": "/common/json/lottie/Emoji-04.json",
-      "status": 200,
-      "bytes": 51992,
-      "kind": "json"
-    },
-    {
-      "path": "/common/json/lottie/Emoji-03.json",
-      "status": 200,
-      "bytes": 51443,
-      "kind": "json"
-    },
-    {
-      "path": "/common/json/lottie/Emoji-05.json",
-      "status": 200,
-      "bytes": 32930,
-      "kind": "json"
-    },
-    {
-      "path": "/common/json/lottie/Emoji-06.json",
-      "status": 200,
-      "bytes": 32456,
-      "kind": "json"
-    },
-    {
-      "path": "/common/json/lottie/Emoji-01.json",
-      "status": 200,
-      "bytes": 11061,
-      "kind": "json"
-    },
-    {
-      "path": "https://apis.naver.com/blogserver/like",
-      "status": 200,
-      "bytes": 108,
-      "kind": "json"
-    }
-  ],
-  "bundles_seen": 11
+  "candidates": [],
+  "probed": [],
+  "bundles_seen": 0
 }

@@ -656,6 +656,31 @@ def _fetch_core(
                 url_transform="original", impersonate=None, referer="",
                 verdict=Verdict.UNKNOWN.value, error=f"{type(e).__name__}:{str(e)[:200]}"))
 
+    # -------- Phase 4: auto-forge (opt-in) — discover the data API on the fly -
+    if not skip_browser:
+        try:
+            from .auto_forge import auto_forge_enabled, discover, write_recipe
+            if auto_forge_enabled():
+                found = discover(url, timeout=timeout)
+                if found is not None:
+                    content, endpoint, headers = found
+                    write_recipe(url, endpoint, headers)
+                    att = Attempt(
+                        phase="auto_forge", executor="auto_forge", url=endpoint,
+                        url_transform="discovered", impersonate="chrome", referer="recipe",
+                        status=200, body_size=len(content), verdict=Verdict.WEAK_OK.value,
+                    )
+                    trace.append(att)
+                    return FetchResult(
+                        ok=True, content=content, final_url=endpoint, verdict=att.verdict,
+                        profile_used=profile_used, trace=trace,
+                        summary=f"auto-forge discovered API: {endpoint}",
+                        planned_attempts=planned, executed_attempts=curl_attempts,
+                        grid_exhausted=grid_exhausted, stop_reason="success",
+                    )
+        except Exception:
+            pass
+
     # -------- Give up, return best we have ----------------------------------
     return _give_up(trace, profile_used, last_resp, last_attempt, best_suspect,
                     planned=planned, executed=curl_attempts,

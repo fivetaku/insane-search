@@ -104,6 +104,41 @@ def run() -> None:
             "https://example.com", profile_id="unknown_challenge", force_executor="protocol_stealth_chrome")
     check("missing drivers report actionable error", content == "" and "nodriver" in (att.error or ""))
 
+    print("[auto-forge]")
+    from engine import auto_forge
+    ranked = auto_forge._rank([
+        {"url": "https://s/static/big.json", "bytes": 90000},
+        {"url": "https://s/ajax/list.naver", "bytes": 5000},
+        {"url": "https://s/api/data", "bytes": 40000},
+    ])
+    check("ranking prefers api-path over larger non-api", ranked[0]["url"].endswith("/api/data"))
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["INSANE_RECIPES_DIR"] = tmp
+        auto_forge.write_recipe("https://ex.com/p", "https://ex.com/api/x?y=1", {"Referer": "https://ex.com/"})
+        written = os.path.join(tmp, "ex.com", "recipe.yaml")
+        check("auto recipe written", os.path.isfile(written))
+        rec = recipe_loader.load_recipe("https://ex.com/p")
+        rule = recipe_loader.match_rewrite("https://ex.com/p", rec) if rec else None
+        check("auto recipe rewrites exact page to endpoint",
+              rule is not None and rule["rewritten_url"] == "https://ex.com/api/x?y=1")
+        before = open(written).read()
+        auto_forge.write_recipe("https://ex.com/p", "https://ex.com/api/OTHER", {})
+        check("auto recipe never clobbers existing", open(written).read() == before)
+        os.environ.pop("INSANE_RECIPES_DIR", None)
+    # Wiring: a dead port makes the whole grid fail fast, so Phase 4 runs and
+    # calls discover() (patched). Only discover is mocked — the chain is real.
+    from engine.fetch_chain import fetch as _fetch
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["INSANE_RECIPES_DIR"] = tmp
+        os.environ["INSANE_AUTO_FORGE"] = "1"
+        with patch("engine.auto_forge.discover",
+                   return_value=('{"data": 1}', "http://127.0.0.1:9/api/d", {"Referer": "http://127.0.0.1:9/"})):
+            res = _fetch("http://127.0.0.1:9/blocked", timeout=2, max_attempts=2, enable_playwright=False)
+        check("auto-forge fallback returns discovered API after grid fails",
+              res.ok and res.content == '{"data": 1}' and any(a.phase == "auto_forge" for a in res.trace))
+        os.environ.pop("INSANE_AUTO_FORGE", None)
+        os.environ.pop("INSANE_RECIPES_DIR", None)
+
     print(f"\n{_P} passed, {_F} failed")
     if _F:
         sys.exit(1)

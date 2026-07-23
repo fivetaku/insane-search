@@ -10,6 +10,7 @@ Merge the omo-senpi engine improvements (verified before/after: 9/14 → 12/14 o
 - **New WAF profiles**: `kasada_ips`, `imperva_incapsula`; `needs_protocol_stealth` added to Akamai/Cloudflare/DataDome/PerimeterX.
 - **Scraper forge**: `scripts/endpoint_miner.py` (static API mining) + `engine/templates/network_capture_patchright.py` (dynamic XHR capture) + `engine/recipe_loader.py` + `recipes/<domain>/recipe.yaml`. Recipes are consulted before the grid (Phase 0.5); a page-URL rewrite maps a blocked HTML page to its open JSON API.
 - **Observations log**: every fetch outcome appended to `observations/*.jsonl` for profile tuning (route learning remains in `learning.py`).
+- **auto-forge (opt-in, `INSANE_AUTO_FORGE=1`)**: when the chain gives up, render once, capture XHR/fetch traffic, pick the endpoint whose JSON most overlaps the rendered page text (ad/telemetry endpoints denied), confirm it replays with plain curl, return that JSON and auto-write a recipe. Multi-domain test: correctly finds the content API on JS-app sites (Naver/Musinsa/11st/dev.to/Clien) and returns no-content on server-rendered pages (HN/Reddit/SO) instead of grabbing an ad blob.
 
 ## 0.9.1 — 2026-07-02
 

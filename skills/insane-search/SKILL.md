@@ -229,6 +229,7 @@ HTML은 막혀도 내부 API는 얕은 경우가 많다(R7). 발굴→검증→�
 - 정적 마이닝: `python3 scripts/endpoint_miner.py <URL>`
 - 동적 캡처: `engine/templates/network_capture_patchright.py` (렌더 중 XHR/JSON 수집)
 - 결과를 `recipes/<domain>/recipe.yaml`로 저장하면 이후 `python3 -m engine <URL>`이 격자 전에 API로 직행한다.
+- **자동 모드**: `INSANE_AUTO_FORGE=1`을 주면 체인이 실패할 때 엔진이 스스로 렌더→XHR 캡처→본문 overlap으로 데이터 API 선별→curl 재현→레시피 자동 저장까지 한다(JS앱+JSON API 사이트에서 동작; 서버렌더/인증/POST는 no-content). 광고·텔레메트리 엔드포인트는 denylist+overlap으로 걸러낸다.
 
 ### Playwright MCP 호출 규칙
 
