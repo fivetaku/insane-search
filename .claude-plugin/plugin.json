@@ -1,0 +1,42 @@
+{
+  "name": "insane-search",
+  "version": "0.14.0",
+  "description": "Public-content reader for AI agents — reaches public pages, official APIs, and feeds via a Phase 0→3 adaptive access chain (curl_cffi impersonation, mobile/URL transforms, headless-browser fallback). No API keys. Dual-use developer tool; the user is responsible for lawful, authorized use.",
+  "author": {
+    "name": "fivetaku",
+    "url": "https://github.com/fivetaku"
+  },
+  "homepage": "https://github.com/fivetaku/insane-search",
+  "repository": "https://github.com/fivetaku/insane-search",
+  "license": "MIT",
+  "keywords": [
+    "web-access",
+    "search",
+    "webfetch",
+    "access-fallback",
+    "jina",
+    "yt-dlp",
+    "twitter",
+    "reddit",
+    "youtube",
+    "naver",
+    "bluesky",
+    "github",
+    "arxiv",
+    "medium",
+    "hacker-news",
+    "mastodon",
+    "threads",
+    "stackoverflow",
+    "dcinside",
+    "fmkorea",
+    "coupang",
+    "linkedin",
+    "yozm",
+    "curl_cffi",
+    "tls-impersonation",
+    "playwright",
+    "amp-cache",
+    "archive"
+  ]
+}
