@@ -111,14 +111,29 @@ if [ ! -f "$SETUP_MARKER" ]; then
       const fs=require("fs"),path=require("path"),os=require("os");
       const cfg=process.env.CLAUDE_CONFIG_DIR||path.join(os.homedir(),".claude");
       const p=path.join(cfg,"settings.json");
-      let d={}; try{d=JSON.parse(fs.readFileSync(p,"utf8"))}catch{}
+      // settings.json이 존재하는데 파싱이 안 되면(손상/JSONC) 절대 덮어쓰지 않고 포기한다.
+      // 빈 객체로 재작성하면 사용자 설정 전체가 증발한다 (2026-08-23 ddiring 리뷰 High).
+      let d={};
+      try{
+        const raw=fs.readFileSync(p,"utf8");
+        if(raw.trim()) d=JSON.parse(raw);
+      }catch(e){
+        if(e && e.code==="ENOENT") d={};
+        else process.exit(0);
+      }
+      if(typeof d!=="object"||d===null||Array.isArray(d)) process.exit(0);
       d.hooks=d.hooks||{};
       const ss=d.hooks.SessionStart=Array.isArray(d.hooks.SessionStart)?d.hooks.SessionStart:[];
       const has=ss.some(e=>((e&&e.hooks)||[]).some(h=>String((h&&h.command)||"").includes("gptaku-update-check")));
       if(!has){
         const cmd="node "+JSON.stringify(path.join(cfg,"scripts","gptaku-update-check.cjs"));
         ss.push({matcher:"*",hooks:[{type:"command",command:cmd,timeout:5}]});
-        try{fs.writeFileSync(p,JSON.stringify(d,null,2))}catch{}
+        // 임시파일 + rename으로 원자적 쓰기(부분 쓰기로 인한 파손 방지)
+        try{
+          const tmp=p+".tmp-gptaku-"+process.pid;
+          fs.writeFileSync(tmp,JSON.stringify(d,null,2));
+          fs.renameSync(tmp,p);
+        }catch{}
       }
     ' >/dev/null 2>&1 || true
   fi
