@@ -12,7 +12,7 @@ Only special endpoints that the generic chain can't discover on its own. Everyth
 
 | Platform | Method | Reference |
 |----------|--------|-----------|
-| X/Twitter | single tweet → `cdn.syndication tweet-result` + oEmbed · timeline → syndication · keyword → **WebSearch → tweet-result** | `twitter.md` |
+| X/Twitter | single tweet → `cdn.syndication tweet-result` + oEmbed · timeline → syndication · keyword → **무료 Brave·Yahoo + 선택적 xAI `x_search` 병합 → tweet-result 재검증** | `twitter.md` |
 | Reddit | `.rss` feed via curl_cffi (the unauth `.json` now 403s) | `json-api.md` |
 | Threads | video post → inline `video_versions` JSON, block nearest to the URL shortcode (engine Phase 0 — yt-dlp has no extractor; signed CDN URLs expire, download immediately) | `media.md` |
 | Bluesky | AT Protocol (`public.api.bsky.app/xrpc/...`) | `public-api.md` |
@@ -116,7 +116,7 @@ There are no commands. Just talk normally — the skill triggers when a URL is b
 → Reddit .rss feed (curl_cffi) → posts
 
 "Search X for insane-search"
-→ Intent routing: keyword → WebSearch(site:x.com) → tweet-result → full tweets
+→ Intent routing: keyword → `python3 -m engine.x_search QUERY` → free Brave·Yahoo + optional xAI discovery → tweet-result → full tweets
 
 "네이버에서 클로드코드 뉴스 찾아줘"
 → Naver Search (identity spoofing) → news tab → article URLs → Jina Reader

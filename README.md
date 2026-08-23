@@ -41,7 +41,7 @@ Just ask normally — insane-search kicks in when a fetch gets blocked:
 > *"Search X for posts about insane-search."*
 > *"Summarize this YouTube video."*
 
-**Expected:** Claude reaches each site's public route — Reddit's feed, X via oEmbed, YouTube captions — with no login and no API key, and returns usable text, where the same request returns *"I can't access that"* without the plugin.
+**Expected:** Claude reaches each site's public route — Reddit's feed, X through free Brave/Yahoo discovery plus tweet-result validation, YouTube captions — with no login and no API key. If xAI credentials are already available, X keyword discovery is automatically augmented with native `x_search`; the free route remains active and can be forced with `INSANE_SEARCH_XAI=off`.
 
 ## 🌐 Works on
 

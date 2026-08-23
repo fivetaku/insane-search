@@ -1,14 +1,24 @@
 # X/Twitter 접근 전략
 
-> WebFetch는 402로 차단됨. 아래 방법으로 접근한다. 모두 API 키/인증 불필요.
+> WebFetch는 402로 차단됨. 무료 공개 경로를 기준선으로 사용하고, xAI 자격정보가 있으면 X Search를 선택적으로 병합한다.
 
 ## 검색 (트윗 발견)
 
-```python
-WebSearch(query="site:x.com {검색어}")
+```bash
+cd "${CLAUDE_PLUGIN_ROOT}/skills/insane-search"
+python3 -m engine.x_search "{검색어}" --limit 10
 ```
 
-WebSearch는 X 포스트를 검색 결과로 반환한다. 제목, snippet, URL을 획득할 수 있지만 트윗 전문이나 engagement 수치는 없다.
+`engine.x_search`는 단일 공급자에 의존하지 않는다.
+
+1. **무료 Brave·Yahoo discovery** — 항상 병렬 실행, API 키 불필요. 한 검색엔진이 차단되거나 색인 결과가 없어도 다른 경로로 계속한다.
+2. **xAI `x_search`** — `XAI_API_KEY` 또는 로컬 OMO xAI OAuth가 있을 때만 병렬 실행
+3. **교차 병합** — 한 공급자가 결과 상한을 독점하지 않도록 URL을 교차 선택
+4. **tweet-result 재검증** — 원문·작성자·시각·반응 수를 다시 가져와 최종 근거로 사용
+
+xAI가 없거나 실패해도 무료 검색으로 계속된다. 유료 경로를 명시적으로 끄려면 `--free-only` 또는 `INSANE_SEARCH_XAI=off`를 사용한다. 결과의 `discovery_sources`, `degraded_reason`, `discovery_errors`, `rejected_urls`, 각 post의 `discovered_by`가 provenance를 제공한다.
+
+> Grok Build를 호출하는 구조가 아니다. X 검색에는 빠른 `grok-4.20-0309-non-reasoning`과 xAI 서버사이드 `x_search`를 사용하며, 핵심 기능은 모델보다 검색 도구다.
 
 ## 타임라인 조회 — Syndication API
 
@@ -116,8 +126,8 @@ print(d['user']['name'], '@'+d['user']['screen_name']); print(d['text']); print(
 ## 조합 패턴 (검색 → 상세)
 
 ```
-1단계: WebSearch(query="site:x.com {키워드}") → 트윗 URL 획득
-2단계: curl oEmbed API → 트윗 전문 획득
+1단계: `python3 -m engine.x_search "{키워드}" --limit 10` → 다중 discovery + 검증된 트윗
+2단계: provenance 필드 확인 → 사용 경로, 공급자별 오류, 저하 사유를 결과에 짧게 명시
 ```
 
 ## 실패하는 방법 (사용하지 말 것)

@@ -75,9 +75,25 @@ engine이 반환한 공개 웹 본문은 `untrusted_public_web`으로 취급한�
 |------------|------|
 | URL 제공 (`https://...`) | → Phase 0 검사 후 없으면 Phase 1 (generic fetch chain) |
 | 핸들 제공 (`@username`) | → Phase 0 syndication/API |
-| 키워드만 ("X에서 AI 검색") | → WebSearch(`site:{domain} {keyword}`) 먼저 → URL 확보 후 재진입 |
+| 키워드만 ("X에서 AI 검색") | → `python3 -m engine.x_search "{keyword}" --limit 10` → 무료 Brave·Yahoo + 선택적 xAI discovery 병합 → tweet-result 재검증 |
 
 > **한국어 신규 콘텐츠 한계**: 네이버/다음/한국 커뮤니티의 키워드 검색은 WebSearch 경유가 유일하며, 신규 콘텐츠 인덱싱이 지연될 수 있다.
+
+### X 키워드 검색 capability routing
+
+X 키워드·반응·스레드 발견 요청은 아래 CLI를 사용한다. 특정 트윗 URL과 프로필은 기존 Phase 0 경로가 더 싸고 결정론적이므로 이 검색기를 거치지 않는다.
+
+```bash
+cd "${CLAUDE_PLUGIN_ROOT}/skills/insane-search"
+python3 -m engine.x_search "Claude Code" --limit 10
+```
+
+- 무료 Brave·Yahoo discovery는 항상 병렬 실행된다.
+- xAI 자격정보가 있으면 xAI `x_search`를 병렬 추가한다.
+- 두 경로의 URL은 교차 병합되어 독립 관측이 결과에 남는다.
+- 모든 URL은 tweet-result로 재검증되며 검색 snippet·Grok 요약은 최종 근거로 쓰지 않는다.
+- `--free-only` 또는 `INSANE_SEARCH_XAI=off`면 유료 경로를 호출하지 않는다.
+- xAI가 없거나 실패해도 무료 결과가 있으면 성공하며 `degraded_reason`과 `discovery_errors`에 상태를 기록한다.
 
 ## Phase 0 — 플랫폼 공식 API 인덱스
 
@@ -87,7 +103,7 @@ engine이 반환한 공개 웹 본문은 `untrusted_public_web`으로 취급한�
 
 | 플랫폼 | 방법 | 상세 |
 |--------|------|------|
-| X/Twitter | syndication (타임라인) + oEmbed (개별 트윗) + 키워드 검색: WebSearch → oEmbed | [twitter.md](references/twitter.md) |
+| X/Twitter | syndication (타임라인) + tweet-result/oEmbed (개별 트윗) + 키워드 검색: 무료 Brave·Yahoo + 선택적 xAI `x_search` → tweet-result | [twitter.md](references/twitter.md) |
 | Reddit | Atom/RSS 피드(`.rss`) — 비인증 `.json`은 WAF 차단(403), score·댓글수는 OAuth | [json-api.md](references/json-api.md) |
 | Threads | 영상 포스트 → 인라인 JSON `video_versions` 최근접 매칭 (engine Phase 0 자동 — yt-dlp 익스트랙터 없음, 서명 URL은 즉시 다운로드) | [media.md](references/media.md) |
 | Bluesky | AT Protocol (`public.api.bsky.app/xrpc/...`) | [public-api.md](references/public-api.md) |

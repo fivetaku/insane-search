@@ -8,6 +8,7 @@ from .validators import Verdict, ValidationResult, validate, CHALLENGE_MARKERS
 from .waf_detector import detect
 from .url_transforms import TRANSFORMS, apply_transform
 from .fetch_chain import fetch, FetchResult, Attempt
+from .x_search_types import XPost, XSearchResult
 from .content_safety import (
     BEGIN_UNTRUSTED_WEB_CONTENT,
     CONTENT_TRUST_UNTRUSTED_PUBLIC_WEB,
@@ -28,6 +29,8 @@ __all__ = [
     "fetch",
     "FetchResult",
     "Attempt",
+    "XPost",
+    "XSearchResult",
     "BEGIN_UNTRUSTED_WEB_CONTENT",
     "CONTENT_TRUST_UNTRUSTED_PUBLIC_WEB",
     "END_UNTRUSTED_WEB_CONTENT",

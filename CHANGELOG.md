@@ -1,6 +1,13 @@
 # Changelog
 
 
+## 0.15.0 — 2026-08-24
+
+- **X keyword discovery now works without Grok and improves automatically when xAI is available.** Free Brave and Yahoo discovery run in parallel, optional native xAI `x_search` joins when `XAI_API_KEY` or local OMO xAI OAuth is available, and every candidate URL is revalidated through the public tweet-result endpoint before it is returned.
+- **Research-grade provenance.** Results expose contributing discovery sources, provider-specific errors, rejected URLs, and per-post discovery attribution. Free-only operation is available through `--free-only` or `INSANE_SEARCH_XAI=off`.
+- **Live regression coverage.** The X coverage battery now verifies keyword discovery plus deterministic post extraction, in addition to the existing timeline, tweet-result, and oEmbed routes.
+
+
 ## 0.14.1 — 2026-08-24
 
 - **Fix: first-run setup could wipe `settings.json`** — if the file was corrupted or contained comments (JSONC), the shared update-notifier installer re-wrote it as an empty object plus the hook, silently destroying all user settings. It now refuses to write when parsing fails and writes atomically (tmp + rename). Marketplace-wide propagation of the fix found in the ddiring v0.1.1 external review; reproduction-verified.

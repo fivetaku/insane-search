@@ -28,7 +28,11 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Callable, Optional
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 # --- result schema -----------------------------------------------------------
@@ -123,9 +127,26 @@ def x_routes(handle: str = "AnthropicAI", tweet_id: str = "1976332881409737124")
         except Exception:
             return RouteResult("x", "publish oembed(url)", ok=False, status=x.status_code, bytes=len(x.text))
 
+    def keyword_free():
+        from engine.x_search import search_x
+
+        result = search_x("Claude Code", limit=3, timeout=20, use_xai=False)
+        sample = f"{len(result.posts)} posts via {','.join(result.discovery_sources) or 'none'}"
+        error = "; ".join(f"{source}:{message}" for source, message in result.discovery_errors.items())
+        return RouteResult(
+            "x",
+            "keyword free discovery+validation",
+            ok=result.ok,
+            status=200 if result.ok else 0,
+            bytes=sum(len(post.text) for post in result.posts),
+            sample=sample,
+            error=error or None,
+        )
+
     out.append(_route("x", "syndication-timeline(handle)", syndication_timeline))
     out.append(_route("x", "cdn.syndication tweet-result(id)", tweet_result))
     out.append(_route("x", "publish oembed(url)", oembed))
+    out.append(_route("x", "keyword free discovery+validation", keyword_free))
     return out
 
 
