@@ -5,9 +5,12 @@
  *
  * Mirrors oh-my-claudecode's approach, adapted for a git-submodule marketplace:
  *   - "latest version" comes from the marketplace git remote, not npm.
- *   - The expensive part (network: git ls-remote) is cached 24h.
- *   - The local marketplace HEAD is read fresh every run, so once the user
- *     pulls + restarts the notice disappears immediately (no stale positives).
+ *   - The expensive part (network: git ls-remote) is cached 24h, but the cache
+ *     is discarded early when the local HEAD moved or when the cached remote is
+ *     already an ancestor of local — otherwise a pull would keep producing a
+ *     false "update available" for the rest of the TTL.
+ *   - The notice fires only when the remote is NOT an ancestor of local, so a
+ *     local clone that is ahead of (or equal to) the remote stays silent.
  *   - All gptaku plugins ship this same hook; an exclusive per-session lock
  *     ensures only the FIRST plugin to fire does the work — the rest are no-ops.
  *
@@ -88,26 +91,57 @@ function cleanupStaleLocks() {
   } catch {}
 }
 
-function getRemoteShaCached() {
-  // Fresh from cache if within TTL.
+// true  → `a` is an ancestor of `b` (or the same commit)
+// false → it is not
+// null  → undecidable here (e.g. `a` isn't in the local object store)
+function isAncestor(a, b) {
+  if (!a || !b) return null;
+  if (a === b) return true;
+  try {
+    git(['merge-base', '--is-ancestor', a, b], 2500);
+    return true;
+  } catch (e) {
+    // exit 1 = not an ancestor; anything else (missing object, etc.) = undecidable
+    return e && e.status === 1 ? false : null;
+  }
+}
+
+function fetchRemoteSha() {
+  // Branch-agnostic: remote default HEAD.
+  try {
+    const out = git(['ls-remote', 'origin', 'HEAD'], 2500);
+    return (out.split(/\s+/)[0] || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function getRemoteShaCached(localSha) {
+  // Serve from cache only while the cache is still meaningful. A cached remote
+  // SHA goes stale in two ways the TTL alone can't see:
+  //   1. the user pulled, so localSha moved since the cache was written
+  //   2. the cached remote is already an ancestor of local (local is ahead)
+  // Either way the cached value would produce a false "update available".
   try {
     if (fs.existsSync(CACHE_FILE)) {
       const c = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
-      if (c && c.timestamp && (Date.now() - c.timestamp) < CACHE_MS && c.remoteSha) {
+      const fresh = c && c.timestamp && (Date.now() - c.timestamp) < CACHE_MS && c.remoteSha;
+      const sameLocal = c && c.localSha === localSha;
+      if (fresh && sameLocal && isAncestor(c.remoteSha, localSha) !== true) {
         return c.remoteSha;
       }
     }
   } catch {}
-  // Otherwise hit the network (branch-agnostic: remote default HEAD).
-  try {
-    const out = git(['ls-remote', 'origin', 'HEAD'], 2500);
-    const sha = (out.split(/\s+/)[0] || '').trim();
-    if (sha) {
-      try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ timestamp: Date.now(), remoteSha: sha })); } catch {}
-      return sha;
-    }
-  } catch {}
-  return '';
+
+  const sha = fetchRemoteSha();
+  if (sha) {
+    try {
+      fs.writeFileSync(CACHE_FILE, JSON.stringify({
+        timestamp: Date.now(), remoteSha: sha, localSha: localSha,
+      }));
+    } catch {}
+  }
+  return sha;
 }
 
 try {
@@ -123,9 +157,15 @@ try {
   try { localSha = git(['rev-parse', 'HEAD']); } catch {}
   if (!localSha) emitSilent();
 
-  const remoteSha = getRemoteShaCached();
+  const remoteSha = getRemoteShaCached(localSha);
 
-  if (remoteSha && localSha && remoteSha !== localSha) {
+  // Notify only when the remote actually carries commits we don't have. When the
+  // remote is an ancestor of local, local is ahead (or equal) and there is
+  // nothing to pull. `null` means we couldn't decide — fail open and notify.
+  const behind = remoteSha && localSha && remoteSha !== localSha &&
+    isAncestor(remoteSha, localSha) !== true;
+
+  if (behind) {
     const lo = localSha.slice(0, 7);
     const re = remoteSha.slice(0, 7);
     emitNotice(
