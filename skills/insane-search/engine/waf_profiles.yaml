@@ -213,6 +213,7 @@ unknown_challenge:
     - mobile_subdomain
   fallback_when_challenge:
     - playwright_mcp
+    - protocol_stealth_chrome
     - playwright_real_chrome
   notes: |
     When detector returns low-confidence results we land here. Broad,

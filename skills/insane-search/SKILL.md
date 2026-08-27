@@ -260,11 +260,13 @@ pip install resiliparse pdfplumber -q   # 본문추출(opt-in)·PDF 개선을 �
 
 실패(`ok=False`) 응답에는 `block_class`가 붙는다 — `bot_detection`(라우트 결과가 엇갈리거나 WAF 시그널 → 브라우저·다른 라우트로 우회 가능) vs `infra_or_auth`(모든 라우트가 균일하게 401/404 → 스텔스로 우회 불가). 재시도 가치 판단에 사용한다.
 
-Playwright 로컬 경로 사용 시 Node가 필요. 로컬 의존성은 `engine/templates/`의 package.json으로 관리한다 (executor가 그 디렉토리를 cwd로 실행). **Patchright**는 Playwright drop-in 포크로, Cloudflare/DataDome이 감지하는 CDP `Runtime.enable` 누출을 막아준다 — 템플릿이 설치돼 있으면 최우선 사용하고, 없으면 playwright-extra+stealth → plain playwright로 폴백한다:
+Playwright 로컬 경로 사용 시 Node가 필요하다. **Node 의존성은 첫 브라우저 폴백에서 자동 설치된다** — `~/.insane-search/node`에 한 번 설치해 플러그인 버전이 올라가도 재사용하고, `NODE_PATH`로 템플릿에 주입한다. (`engine/templates/node_modules`는 gitignore라 마켓플레이스 설치본에는 애초에 없다 — 예전에는 이 때문에 마지막 폴백이 `Cannot find module 'playwright'`로 항상 죽었다.) 번들 Chromium은 받지 않는다(`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`) — 템플릿이 `channel:'chrome'`로 **시스템 Chrome**을 쓰기 때문. **Patchright**는 Playwright drop-in 포크로, Cloudflare/DataDome이 감지하는 CDP `Runtime.enable` 누출을 막아준다 — 설치돼 있으면 최우선 사용하고, 없으면 playwright-extra+stealth → plain playwright로 폴백한다. 수동 설치가 필요하면:
 ```bash
-cd "${CLAUDE_PLUGIN_ROOT}/skills/insane-search/engine/templates" && npm install
-npx patchright install chrome   # 시스템 Chrome 채널 (channel:'chrome' 사용)
+mkdir -p ~/.insane-search/node && cp "${CLAUDE_PLUGIN_ROOT}/skills/insane-search/engine/templates/package.json" ~/.insane-search/node/
+cd ~/.insane-search/node && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install
 ```
+
+**브라우저 레인은 headful이 기본이다.** headless Chrome은 지문 이전에 신호만으로 봇 점수를 먹어 Cloudflare 챌린지를 통과하지 못한다 — nodriver(raw CDP)·patchright 템플릿도 Playwright 템플릿과 같이 `headless=false`로 돈다(`{"headless": true}` 인자로 덮어쓸 수 있음).
 
 ## 빠른 참조 — Phase 0 명령어
 

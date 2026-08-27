@@ -55,13 +55,70 @@ def _node_available() -> bool:
     return shutil.which("node") is not None
 
 
-def _chrome_channel_available() -> bool:
-    """Heuristic: try `node -e` to import playwright. Fallback to True, let script fail loudly."""
+# Node deps live OUTSIDE the plugin tree. `templates/node_modules` is gitignored,
+# so a marketplace install (or any fresh clone) ships the JS templates with no
+# `playwright` module — every browser fallback then died instantly with
+# "Cannot find module 'playwright'". A version-independent shared dir is
+# installed once and reused across plugin upgrades.
+NODE_DEPS_DIR = os.path.expanduser("~/.insane-search/node")
+_NODE_DEPS_CACHE: Optional[str] = None
+
+
+def _has_playwright_module(root: str) -> bool:
+    return os.path.isdir(os.path.join(root, "node_modules", "playwright"))
+
+
+def _npm_install(dest: str) -> bool:
+    """Install the template deps into `dest`. Browsers are skipped: the
+    templates use channel:'chrome' (the system Chrome), never bundled Chromium."""
+    if shutil.which("npm") is None:
+        return False
+    os.makedirs(dest, exist_ok=True)
+    src_pkg = os.path.join(TEMPLATES_DIR, "package.json")
+    if os.path.isfile(src_pkg):
+        shutil.copyfile(src_pkg, os.path.join(dest, "package.json"))
+    env = dict(os.environ)
+    env["PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD"] = "1"
+    env["PATCHRIGHT_SKIP_BROWSER_DOWNLOAD"] = "1"
+    lock = os.path.join(dest, ".installing")
+    try:
+        # Crude single-flight guard: a concurrent fallback should not run a
+        # second npm install into the same dir.
+        if os.path.exists(lock) and time.time() - os.path.getmtime(lock) < 900:
+            return _has_playwright_module(dest)
+        open(lock, "w").close()
+        subprocess.run(
+            ["npm", "install", "--silent", "--no-audit", "--no-fund"],
+            cwd=dest, env=env, capture_output=True, text=True, timeout=900, check=False,
+        )
+    except Exception:
+        return False
+    finally:
+        try:
+            os.remove(lock)
+        except Exception:
+            pass
+    return _has_playwright_module(dest)
+
+
+def _resolve_node_deps() -> Optional[str]:
+    """Return the dir whose node_modules holds playwright, installing it once
+    if needed. None = node/npm unusable."""
+    global _NODE_DEPS_CACHE
+    if _NODE_DEPS_CACHE is not None:
+        return _NODE_DEPS_CACHE or None
     if not _node_available():
-        return False
-    if shutil.which("npx") is None:
-        return False
-    return True
+        _NODE_DEPS_CACHE = ""
+        return None
+    for root in (TEMPLATES_DIR, NODE_DEPS_DIR):
+        if _has_playwright_module(root):
+            _NODE_DEPS_CACHE = root
+            return root
+    if _npm_install(NODE_DEPS_DIR):
+        _NODE_DEPS_CACHE = NODE_DEPS_DIR
+        return NODE_DEPS_DIR
+    _NODE_DEPS_CACHE = ""
+    return None
 
 
 def _pick_executor(capabilities: list[str], device_class: str) -> str:
@@ -150,20 +207,30 @@ def _run_protocol_stealth(
     return att, ""
 
 
-def _run_node_template(template: str, args: dict, timeout: int = 90) -> tuple[int, str, str]:
+def _run_node_template(template: str, args: dict, timeout: int = 90,
+                       deps_root: Optional[str] = None) -> tuple[int, str, str]:
     """Run a Node.js template with args as JSON on stdin.
 
     Template convention: reads `process.stdin` → JSON → runs fetch → writes
     HTML to stdout; errors go to stderr with non-zero exit code.
+
+    `deps_root` is the dir holding node_modules; it is exported as NODE_PATH so
+    the template resolves playwright/patchright even when the deps live outside
+    the (gitignored, version-scoped) plugin tree.
     """
     path = os.path.join(TEMPLATES_DIR, template)
     if not os.path.isfile(path):
         return 127, "", f"template not found: {path}"
+    env = dict(os.environ)
+    if deps_root:
+        node_path = os.path.join(deps_root, "node_modules")
+        env["NODE_PATH"] = (node_path + os.pathsep + env["NODE_PATH"]) if env.get("NODE_PATH") else node_path
     try:
         proc = subprocess.run(
             ["node", path],
             input=json.dumps(args),
             cwd=TEMPLATES_DIR,
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -240,8 +307,12 @@ def run_playwright_fallback(
         att.elapsed_s = round(time.time() - t0, 3)
         return att, ""
 
-    if not _chrome_channel_available():
-        att.error = "node/npx not available for local Playwright template"
+    deps_root = _resolve_node_deps()
+    if deps_root is None:
+        att.error = (
+            "node/npm unavailable or `npm install` failed — local Playwright template "
+            f"cannot resolve its deps (tried {TEMPLATES_DIR}, {NODE_DEPS_DIR})"
+        )
         att.verdict = Verdict.UNKNOWN.value
         att.elapsed_s = round(time.time() - t0, 3)
         return att, ""
@@ -272,7 +343,8 @@ def run_playwright_fallback(
     if success_selectors:
         args["waitSelector"] = success_selectors[0]
 
-    rc, stdout, stderr = _run_node_template(template, args, timeout=timeout + 10)
+    rc, stdout, stderr = _run_node_template(template, args, timeout=timeout + 10,
+                                            deps_root=deps_root)
     att.elapsed_s = round(time.time() - t0, 3)
 
     if rc != 0 or not stdout:

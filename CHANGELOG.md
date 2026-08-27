@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0 — 2026-08-27
+
+- **마지막 브라우저 폴백이 설치본에서 항상 죽던 문제 수정.** `engine/templates/node_modules`가 gitignore라 마켓플레이스 설치본에는 Node 의존성이 없었고, `playwright_real_chrome`/`playwright_mobile_chrome` 폴백은 매번 `Cannot find module 'playwright'`로 즉사했다. 이제 첫 브라우저 폴백에서 `~/.insane-search/node`에 한 번 설치해 플러그인 버전이 올라가도 재사용하고, `NODE_PATH`로 템플릿에 주입한다. 번들 Chromium은 받지 않는다(템플릿이 `channel:'chrome'`로 시스템 Chrome을 사용).
+- **CDP 레인(nodriver)·patchright 레인을 headful로 전환.** headless Chrome은 지문 이전에 신호만으로 봇 점수를 먹어 Cloudflare 챌린지를 통과하지 못했다. Playwright 템플릿과 동일하게 `headless=false`가 기본이며 `{"headless": true}`로 덮어쓸 수 있다.
+- **`unknown_challenge` 프로파일에 `protocol_stealth_chrome` 추가.** 저신뢰 탐지로 이 프로파일에 떨어지면 MCP 스텁 → Playwright 순뿐이라 CDP 레인을 아예 건너뛰었다.
+- 실측: Cloudflare Turnstile 페이지에서 이전 = 전 라우트 실패, 이후 = nodriver 7.8s `weak_ok`(49KB) / `playwright_real_chrome` 200 (1.2MB).
+
 
 ## 0.15.0 — 2026-08-24
 
