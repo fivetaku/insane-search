@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .url_masking import mask_url
+
 _SKILL_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -32,7 +34,7 @@ def log_fetch(url: str, result) -> None:
         )
         entry = {
             "ts": int(time.time()),
-            "url": url,
+            "url": mask_url(url),
             "domain": (urlparse(url).hostname or "").lower(),
             "ok": bool(getattr(result, "ok", False)),
             "verdict": getattr(result, "verdict", ""),
@@ -47,7 +49,7 @@ def log_fetch(url: str, result) -> None:
                 "executor": getattr(winner, "executor", ""),
                 "transform": getattr(winner, "url_transform", ""),
                 "impersonate": getattr(winner, "impersonate", None),
-                "referer": getattr(winner, "referer", ""),
+                "referer": mask_url(getattr(winner, "referer", "")),
                 "status": getattr(winner, "status", 0),
                 "body_size": getattr(winner, "body_size", 0),
             }

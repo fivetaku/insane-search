@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Final, TypedDict
 
+from .url_masking import mask_url
+
 
 BEGIN_UNTRUSTED_WEB_CONTENT: Final = "[BEGIN UNTRUSTED WEB CONTENT]"
 END_UNTRUSTED_WEB_CONTENT: Final = "[END UNTRUSTED WEB CONTENT]"
@@ -138,7 +140,9 @@ def wrap_untrusted_content(
         f"prompt_injection_signals: {signal_text}",
     ]
     if source_url:
-        header.append(f"source_url: {json.dumps(source_url, ensure_ascii=True)}")
+        # Masked: this header is promoted to stdout with the fetched body, so a
+        # token in the final URL's query would surface in the transcript.
+        header.append(f"source_url: {json.dumps(mask_url(source_url), ensure_ascii=True)}")
     return (
         "\n".join(header)
         + "\n\n"
