@@ -74,12 +74,11 @@ def t_parse_envelope_inner_text_capped():
 
 
 def t_parse_envelope_raw_html_fallback():
-    html, final, status, cookies, ua, automation, inner_text = _parse_envelope(
-        "<html>raw</html>", "https://x/q")
-    assert html == "<html>raw</html>" and final == "https://x/q" and status == 200
-    assert cookies == [] and ua is None
-    assert inner_text == ""
-    print("  ✓ raw-HTML fallback (non-JSON stdout, innerText default '')")
+    # Non-envelope stdout is rejected (fail closed): a truncated envelope still
+    # carries the cookie jar in plain text, so it must never become page HTML.
+    assert _parse_envelope("<html>raw</html>", "https://x/q") is None
+    assert _parse_envelope('{"html":"x","cookies":[{"value":"S"}', "https://x/q") is None
+    print("  ✓ non-envelope stdout rejected (no raw-HTML fallback)")
 
 
 def t_warmup_once_guard_online():

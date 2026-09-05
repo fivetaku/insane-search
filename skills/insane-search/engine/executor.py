@@ -353,9 +353,16 @@ def run_playwright_fallback(
         return att, ""
 
     # stdout is a JSON envelope {html, finalUrl, status, cookies, userAgent,
-    # innerText}. Fall back to treating raw stdout as HTML for forward/backward
-    # compat (older templates that did not emit a JSON envelope).
-    html, final_url, status, cookies, user_agent, automation, inner_text = _parse_envelope(stdout, url)
+    # innerText}. Anything that does not parse as that envelope is discarded:
+    # the raw text carries the browser's cookie jar, so promoting it to "html"
+    # would push session cookies into the wrapped content, --trace and the
+    # observations log. Fail closed instead (2026-09-05, loop Ldc0a).
+    parsed = _parse_envelope(stdout, url)
+    if parsed is None:
+        att.error = "browser template emitted a non-envelope stdout; discarded (may contain cookies)"
+        att.verdict = Verdict.UNKNOWN.value
+        return att, ""
+    html, final_url, status, cookies, user_agent, automation, inner_text = parsed
 
     resp = _FakeResp(html, status=status, final_url=final_url)
     vr = validate(resp, success_selectors=success_selectors)
@@ -385,13 +392,21 @@ def run_playwright_fallback(
 
 def _parse_envelope(stdout: str, url: str):
     """Return (html, final_url, status, cookies, user_agent, automation,
-    inner_text) from a JSON envelope, or treat stdout as raw HTML if it isn't
-    JSON. inner_text is "" for envelopes emitted by older templates."""
+    inner_text) from a JSON envelope, or ``None`` if stdout is not a well-formed
+    envelope object. inner_text is "" for envelopes emitted by older templates.
+
+    There is deliberately no raw-HTML fallback: both shipped templates emit the
+    envelope, and a truncated or prefixed envelope still contains the cookie
+    list in plain text. Returning it as page content would leak those cookies
+    into every downstream sink, so the caller must treat ``None`` as a failed
+    attempt with no body."""
     import json
     s = stdout.lstrip()
     if s[:1] == "{":
         try:
             env = json.loads(s)
+            if not isinstance(env, dict):
+                return None
             html = env.get("html", "") or ""
             final_url = env.get("finalUrl", "") or url
             status = int(env.get("status") or 0) or 200
@@ -404,8 +419,8 @@ def _parse_envelope(stdout: str, url: str):
             inner_text = (env.get("innerText") or "")[:1_000_000]
             return html, final_url, status, cookies, user_agent, automation, inner_text
         except Exception:
-            pass
-    return stdout, url, 200, [], None, None, ""
+            return None
+    return None
 
 
 def _bridge_cookies_to_pool(url: str, cookies: list, user_agent: Optional[str]) -> None:
