@@ -649,12 +649,12 @@ def _plan_for_profile(
     # device_class shaping (fixes desktop/mobile drift)
     if device_class == "mobile":
         groups = [[t for t in g if _is_mobile_tls(t)] for g in groups]
-        for extra in ("mobile_subdomain", "am_prefix"):
+        for extra in ("mobile_subdomain", "am_prefix", "m_prefix_subdomain"):
             if extra not in transform_order:
                 transform_order.append(extra)
     elif device_class == "desktop":
         groups = [[t for t in g if not _is_mobile_tls(t)] for g in groups]
-        transform_order = [t for t in transform_order if t not in ("mobile_subdomain", "am_prefix")] or ["original"]
+        transform_order = [t for t in transform_order if t not in ("mobile_subdomain", "am_prefix", "m_prefix_subdomain")] or ["original"]
 
     # deprioritize (not delete) avoid targets within each family group
     def _reorder(g: list[str]) -> list[str]:

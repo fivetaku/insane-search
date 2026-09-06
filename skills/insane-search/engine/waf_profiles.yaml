@@ -57,6 +57,7 @@ akamai_bot_manager:
   url_transform_order:
     - original
     - mobile_subdomain   # www.* → m.* — strong observational win in SSR sites
+    - m_prefix_subdomain # sub.example.com → m.sub.example.com — portals that serve a frameset shell on desktop
   fallback_when_challenge:
     - curl_grid_exhaust   # try more impersonate × referer × url combos
     - protocol_stealth_chrome
@@ -211,6 +212,7 @@ unknown_challenge:
   url_transform_order:
     - original
     - mobile_subdomain
+    - m_prefix_subdomain # sub.example.com → m.sub.example.com (portal frameset shells read as tiny_body)
   fallback_when_challenge:
     - playwright_mcp
     - protocol_stealth_chrome

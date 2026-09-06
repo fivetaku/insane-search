@@ -197,7 +197,7 @@ report     — FetchResult(ok, verdict, profile_used, trace, summary)
 
 | 축 | 값 | 비고 |
 |----|-----|------|
-| `url_transforms` | `original`, `mobile_subdomain` (`www.→m.`), `am_prefix`, `drop_www` | 사이트명 없음, 규칙만 |
+| `url_transforms` | `original`, `mobile_subdomain` (`www.→m.`), `am_prefix`, `m_prefix_subdomain` (`blog.→m.blog.`), `drop_www` | 사이트명 없음, 규칙만 |
 | `tls_impersonate` | `safari`, `safari_ios`, `chrome99`, `chrome119`, `chrome131`, `chrome_android`, `firefox`... | 프로파일별 avoid 리스트 존재 |
 | `referer_strategy` | `self_root`, `google_search`, `none` | |
 

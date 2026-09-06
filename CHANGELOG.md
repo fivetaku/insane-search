@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.2 — 2026-09-05
+
+- **포털형 호스트(`blog.naver.com`, `cafe.daum.net` …)를 못 열던 문제 수정 — 새 URL 변환 `m_prefix_subdomain`.** 이런 호스트는 데스크톱 요청에 2~3KB 프레임셋 껍데기를 200으로 돌려주고, 판정층은 이를 `tiny_body` → challenge로 읽는다. 기존 모바일 변환은 `www.*`(`mobile_subdomain`)와 apex(`am_prefix`)만 다뤄서 서브도메인이 붙은 호스트는 `m.` 쌍둥이를 **한 번도 시도하지 않았다** — 실측 18회 시도 전패(25초). 이제 `sub.example.com → m.sub.example.com`을 격자에 넣는다. 규칙은 사이트명 없이 범용이며, 무관한 두 포털에서 교차검증(2.9KB→28KB, 1.6KB→24KB).
+- 변환은 `unknown_challenge`·`akamai_bot_manager` 프로필과 코드 내 안전망 기본값에 등록. **프로필에 안 실리면 변환이 존재해도 안 돈다**는 걸 회귀 테스트로 고정(`engine/tests/test_m_prefix_subdomain.py`).
+- 실측 후: 두 사이트 모두 3번째 시도에서 성공(0.35초·0.54초).
+- (미기재분 소급) **0.16.1 이후 커밋** — Playwright 봉투가 JSON으로 파싱되지 않으면 raw stdout(쿠키 포함 가능)을 본문으로 승격하던 경로를 fail-closed로 전환(`engine/tests/test_envelope_fail_closed.py`).
+
+## 0.16.1 — 2026-09-04
+
+- 로그·trace·`source_url`에 남는 URL에서 자격증명 형태의 쿼리 값을 마스킹(`engine/url_masking.py`).
+
 ## 0.16.0 — 2026-08-27
 
 - **마지막 브라우저 폴백이 설치본에서 항상 죽던 문제 수정.** `engine/templates/node_modules`가 gitignore라 마켓플레이스 설치본에는 Node 의존성이 없었고, `playwright_real_chrome`/`playwright_mobile_chrome` 폴백은 매번 `Cannot find module 'playwright'`로 즉사했다. 이제 첫 브라우저 폴백에서 `~/.insane-search/node`에 한 번 설치해 플러그인 버전이 올라가도 재사용하고, `NODE_PATH`로 템플릿에 주입한다. 번들 Chromium은 받지 않는다(템플릿이 `channel:'chrome'`로 시스템 Chrome을 사용).
