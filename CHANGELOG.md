@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.17.3 — 2026-10-15
+- **URL 정보 요청·WebFetch 차단 라우팅 보강.** 특정 URL을 주고 그 페이지에서 정보를 찾는 요청과 WebFetch가 막힌 페이지를 insane-search로 보내도록 `routing.json`의 when 설명과 문맥어(찾고·정보·알려·무슨·뭐·뭔지)를 넓혔다. 단순 의미·일반 검색은 기본 WebSearch에 맡긴다. gptaku-core 0.1.2(WebFetch 차단 폴백 훅)와 함께 적용된다.
+
 ## 0.17.2 — 2026-10-14
 - **gptaku-core 라우팅 조정.** 실제 대화에서 잘못 지목된 사례에 맞춰 `routing.json`의 키워드·제외어를 고쳤다. gptaku-core 0.1.1과 함께 적용된다.
 
