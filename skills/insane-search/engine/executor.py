@@ -71,7 +71,10 @@ def _has_playwright_module(root: str) -> bool:
 def _npm_install(dest: str) -> bool:
     """Install the template deps into `dest`. Browsers are skipped: the
     templates use channel:'chrome' (the system Chrome), never bundled Chromium."""
-    if shutil.which("npm") is None:
+    # Run the resolved path: on Windows npm is npm.cmd, which which() finds via
+    # PATHEXT but CreateProcess cannot launch from the bare name "npm".
+    npm = shutil.which("npm")
+    if npm is None:
         return False
     os.makedirs(dest, exist_ok=True)
     src_pkg = os.path.join(TEMPLATES_DIR, "package.json")
@@ -88,7 +91,7 @@ def _npm_install(dest: str) -> bool:
             return _has_playwright_module(dest)
         open(lock, "w").close()
         subprocess.run(
-            ["npm", "install", "--silent", "--no-audit", "--no-fund"],
+            [npm, "install", "--silent", "--no-audit", "--no-fund"],
             cwd=dest, env=env, capture_output=True, text=True, timeout=900, check=False,
         )
     except Exception:

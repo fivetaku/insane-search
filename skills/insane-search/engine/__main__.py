@@ -24,6 +24,14 @@ import sys
 from . import fetch
 from .url_masking import mask_url
 
+# Windows consoles default to a legacy codepage (e.g. cp949); without this the
+# final print raises UnicodeEncodeError and discards an already-fetched page.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python3 -m engine",
