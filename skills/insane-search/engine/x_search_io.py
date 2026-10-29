@@ -44,3 +44,15 @@ def http_post_json(url: str, payload: dict[str, object], credential: str, timeou
         headers={"Authorization": f"Bearer {credential}", "Content-Type": "application/json"},
         json=payload,
     )
+
+
+def http_post_public_json(url: str, payload: dict[str, object], headers: dict[str, str], timeout: int) -> Any:
+    from curl_cffi import requests
+
+    return requests.post(
+        url,
+        impersonate="safari",
+        timeout=timeout,
+        headers={"Content-Type": "application/json", **headers},
+        json=payload,
+    )
