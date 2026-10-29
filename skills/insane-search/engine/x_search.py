@@ -50,7 +50,7 @@ def search_x(
     if use_xai is None:
         use_xai = os.environ.get("INSANE_SEARCH_XAI", "auto").lower() not in {"0", "false", "off", "no"}
     credential = _resolve_xai_credential() if use_xai else None
-    use_keenable = os.environ.get("INSANE_SEARCH_KEENABLE", "on").lower() not in {"0", "false", "off", "no"}
+    use_keenable = os.environ.get("INSANE_SEARCH_KEENABLE", "").lower() in {"1", "true", "on", "yes"}  # opt-in
     discovered: list[tuple[str, list[str]]] = []
     discovery_errors: dict[str, str] = {}
     degraded_reason = ""

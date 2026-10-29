@@ -1,9 +1,9 @@
 # Changelog
 
 ## Unreleased
-- **X 키워드 discovery에 무료 Keenable 경로 추가.** Brave·Yahoo와 함께 키 없는 Keenable 검색 API를 병렬로 부른다. 같은 두 쿼리 템플릿을 `site: x.com`으로 보내고, 제목·snippet에 검색어의 모든 단어가 들어 있는 결과만 후보로 쓴다. 교차 병합에서는 Brave·Yahoo 다음 마지막 순서이며, 모든 후보는 기존처럼 tweet-result로 재검증된다.
-- 제3자 전송: 검색어와 `X-Keenable-Title: insane-search` 헤더만 api.keenable.ai로 나간다(키·쿠키 없음). 끄기: `INSANE_SEARCH_KEENABLE=off`. `references/twitter.md`에 고지.
-- 검증: `tests/test_x_search.py` 13건 통과(신규 4건). `--free-only --limit 10` 실측 6개 검색어(Brave는 이 환경에서 매번 실패)에서 검증된 트윗 17 → 28건. 일치 결과가 없는 한국어 검색어는 Keenable 후보 0건이라 기존 결과와 같다.
+- **X 키워드 discovery에 opt-in Keenable 경로 추가.** `INSANE_SEARCH_KEENABLE=on`(또는 `1`·`true`·`yes`)이면 Brave·Yahoo와 함께 키 없는 Keenable 검색 API를 병렬로 부른다. 기본은 꺼져 있어 기존 동작은 그대로다. 같은 두 쿼리 템플릿을 `site: x.com`으로 보내고, 제목·snippet에 검색어의 모든 단어가 들어 있는 결과만 후보로 쓴다. 교차 병합에서는 Brave·Yahoo 다음 마지막 순서이며, 모든 후보는 기존처럼 tweet-result로 재검증된다.
+- 제3자 전송(켰을 때만): 검색어와 `X-Keenable-Title: insane-search` 헤더만 api.keenable.ai로 나간다(키·쿠키 없음). `references/twitter.md`에 고지.
+- 검증: `tests/test_x_search.py` 15건 통과(신규 6건). `--free-only --limit 10` 실측 6개 검색어(Brave는 이 환경에서 매번 실패)에서 검증된 트윗 17건(기본) → 28건(켰을 때). 일치 결과가 없는 한국어 검색어는 Keenable 후보 0건이라 기존 결과와 같다.
 
 ## 0.17.4 — 2026-10-28
 - **Windows에서 브라우저 폴백 의존성 설치 실패 수정 (#13).** `npm`이 `npm.cmd`라 `subprocess.run(["npm", ...])`이 실행 파일을 못 찾고 조용히 실패하던 문제. `shutil.which("npm")`이 찾은 경로로 실행한다.

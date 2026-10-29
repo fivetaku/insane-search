@@ -34,7 +34,6 @@ def test_search_uses_free_discovery_when_xai_is_unavailable(monkeypatch: pytest.
         lambda _query, _limit, _timeout: ["https://x.com/example/status/123"],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
-    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: X discovery runs with its default capability routing.
@@ -72,7 +71,6 @@ def test_search_merges_xai_and_free_urls_before_validation(monkeypatch: pytest.M
         ],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
-    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     captured: list[str] = []
 
     def validate(urls: list[str], _timeout: int) -> list[object]:
@@ -108,7 +106,6 @@ def test_search_falls_back_when_xai_errors(monkeypatch: pytest.MonkeyPatch) -> N
         lambda _query, _limit, _timeout: ["https://x.com/example/status/123"],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
-    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: discovery runs.
@@ -135,7 +132,6 @@ def test_search_can_force_free_only_even_when_xai_is_ready(monkeypatch: pytest.M
         lambda _query, _limit, _timeout: ["https://x.com/example/status/123"],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
-    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: discovery runs in free-only mode.
@@ -165,11 +161,6 @@ def test_search_records_free_route_failure_when_xai_succeeds(monkeypatch: pytest
         "_discover_with_yahoo",
         lambda _query, _limit, _timeout: (_ for _ in ()).throw(x_search.XSearchError("free down")),
     )
-    monkeypatch.setattr(
-        x_search,
-        "_discover_with_keenable",
-        lambda _query, _limit, _timeout: (_ for _ in ()).throw(x_search.XSearchError("free down")),
-    )
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: discovery runs.
@@ -179,7 +170,7 @@ def test_search_records_free_route_failure_when_xai_succeeds(monkeypatch: pytest
     assert result.ok is True
     assert result.discovery_sources == ("xai",)
     assert result.degraded_reason == "free_error"
-    assert result.discovery_errors == {"brave": "free down", "yahoo": "free down", "keenable": "free down"}
+    assert result.discovery_errors == {"brave": "free down", "yahoo": "free down"}
 
 
 def test_brave_discovery_extracts_only_status_urls(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -259,8 +250,8 @@ def test_keenable_discovery_turns_transport_errors_into_route_errors(monkeypatch
 
 
 def test_search_appends_keenable_after_existing_free_routes(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Given: each free route discovers a different URL.
-    monkeypatch.delenv("INSANE_SEARCH_KEENABLE", raising=False)
+    # Given: the user opted in to Keenable and each free route discovers a different URL.
+    monkeypatch.setenv("INSANE_SEARCH_KEENABLE", "on")
     monkeypatch.setattr(x_search, "_resolve_xai_credential", lambda: None)
     monkeypatch.setattr(
         x_search,
@@ -297,9 +288,13 @@ def test_search_appends_keenable_after_existing_free_routes(monkeypatch: pytest.
     assert result.discovery_sources == ("brave", "yahoo", "keenable")
 
 
-def test_search_skips_keenable_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Given: the Keenable route is switched off by environment.
-    monkeypatch.setenv("INSANE_SEARCH_KEENABLE", "off")
+@pytest.mark.parametrize("setting", [None, "off", "0"])
+def test_search_skips_keenable_unless_opted_in(monkeypatch: pytest.MonkeyPatch, setting: str | None) -> None:
+    # Given: INSANE_SEARCH_KEENABLE is unset or not an opt-in value.
+    if setting is None:
+        monkeypatch.delenv("INSANE_SEARCH_KEENABLE", raising=False)
+    else:
+        monkeypatch.setenv("INSANE_SEARCH_KEENABLE", setting)
     monkeypatch.setattr(x_search, "_resolve_xai_credential", lambda: None)
     monkeypatch.setattr(
         x_search,
