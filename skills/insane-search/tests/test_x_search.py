@@ -34,6 +34,7 @@ def test_search_uses_free_discovery_when_xai_is_unavailable(monkeypatch: pytest.
         lambda _query, _limit, _timeout: ["https://x.com/example/status/123"],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
+    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: X discovery runs with its default capability routing.
@@ -71,6 +72,7 @@ def test_search_merges_xai_and_free_urls_before_validation(monkeypatch: pytest.M
         ],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
+    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     captured: list[str] = []
 
     def validate(urls: list[str], _timeout: int) -> list[object]:
@@ -106,6 +108,7 @@ def test_search_falls_back_when_xai_errors(monkeypatch: pytest.MonkeyPatch) -> N
         lambda _query, _limit, _timeout: ["https://x.com/example/status/123"],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
+    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: discovery runs.
@@ -132,6 +135,7 @@ def test_search_can_force_free_only_even_when_xai_is_ready(monkeypatch: pytest.M
         lambda _query, _limit, _timeout: ["https://x.com/example/status/123"],
     )
     monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
+    monkeypatch.setattr(x_search, "_discover_with_keenable", lambda _query, _limit, _timeout: [])
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: discovery runs in free-only mode.
@@ -161,6 +165,11 @@ def test_search_records_free_route_failure_when_xai_succeeds(monkeypatch: pytest
         "_discover_with_yahoo",
         lambda _query, _limit, _timeout: (_ for _ in ()).throw(x_search.XSearchError("free down")),
     )
+    monkeypatch.setattr(
+        x_search,
+        "_discover_with_keenable",
+        lambda _query, _limit, _timeout: (_ for _ in ()).throw(x_search.XSearchError("free down")),
+    )
     monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
 
     # When: discovery runs.
@@ -170,7 +179,7 @@ def test_search_records_free_route_failure_when_xai_succeeds(monkeypatch: pytest
     assert result.ok is True
     assert result.discovery_sources == ("xai",)
     assert result.degraded_reason == "free_error"
-    assert result.discovery_errors == {"brave": "free down", "yahoo": "free down"}
+    assert result.discovery_errors == {"brave": "free down", "yahoo": "free down", "keenable": "free down"}
 
 
 def test_brave_discovery_extracts_only_status_urls(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -200,6 +209,118 @@ def test_yahoo_discovery_is_a_free_fallback(monkeypatch: pytest.MonkeyPatch) -> 
 
     # Then: the status URL is available without xAI credentials.
     assert urls == ["https://x.com/example/status/456"]
+
+
+def test_keenable_discovery_reads_status_urls_from_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given: the keyless Keenable API returns matching status URLs mixed with other results.
+    payload = {
+        "results": [
+            {"url": "https://x.com/example/status/789?lang=en", "title": "post", "snippet": "New in Claude Code"},
+            {"url": "https://x.com/example/status/789", "title": "Claude Code", "snippet": "duplicate"},
+            {"url": "https://x.com/other/status/790", "title": "post", "snippet": "unrelated filler"},
+            {"url": "https://x.com/example", "title": "Claude Code profile", "snippet": ""},
+            {"url": "https://example.com/not-x", "title": "Claude Code elsewhere", "snippet": ""},
+        ],
+    }
+    requests: list[tuple[str, dict[str, object], dict[str, str]]] = []
+
+    def post(url: str, body: dict[str, object], headers: dict[str, str], _timeout: int) -> FakeResponse:
+        requests.append((url, body, headers))
+        return FakeResponse(200, json.dumps(payload))
+
+    monkeypatch.setattr(x_search, "_http_post_public_json", post)
+
+    # When: Keenable discovery runs.
+    urls = x_search._discover_with_keenable("Claude Code", 10, 15)
+
+    # Then: one canonical matching status URL; both query templates are scoped to X and sent without a key.
+    assert urls == ["https://x.com/example/status/789"]
+    assert [body["query"] for _, body, _ in requests] == ['site:x.com "Claude Code"', '"Claude Code" x.com/status']
+    assert all(url == "https://api.keenable.ai/v1/search/public" for url, _, _ in requests)
+    assert all(body["site"] == "x.com" and body["max_results"] == 20 for _, body, _ in requests)
+    assert all(headers == {"X-Keenable-Title": "insane-search"} for _, _, headers in requests)
+
+
+def test_keenable_discovery_turns_transport_errors_into_route_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given: the first Keenable request cannot connect and the second is rate limited.
+    responses: list[object] = [OSError("connection refused"), FakeResponse(429, "{}")]
+
+    def post(*_args: object) -> FakeResponse:
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(x_search, "_http_post_public_json", post)
+
+    # When / Then: the adapter raises the per-route error that search_x records.
+    with pytest.raises(x_search.XSearchError, match="Keenable X discovery failed"):
+        x_search._discover_with_keenable("Claude Code", 10, 15)
+
+
+def test_search_appends_keenable_after_existing_free_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given: each free route discovers a different URL.
+    monkeypatch.delenv("INSANE_SEARCH_KEENABLE", raising=False)
+    monkeypatch.setattr(x_search, "_resolve_xai_credential", lambda: None)
+    monkeypatch.setattr(
+        x_search,
+        "_discover_with_brave",
+        lambda _query, _limit, _timeout: ["https://x.com/a/status/1"],
+    )
+    monkeypatch.setattr(
+        x_search,
+        "_discover_with_yahoo",
+        lambda _query, _limit, _timeout: ["https://x.com/b/status/2"],
+    )
+    monkeypatch.setattr(
+        x_search,
+        "_discover_with_keenable",
+        lambda _query, _limit, _timeout: ["https://x.com/c/status/3"],
+    )
+    captured: list[str] = []
+
+    def validate(urls: list[str], _timeout: int) -> list[object]:
+        captured.extend(urls)
+        return _validated_post(urls, _timeout)
+
+    monkeypatch.setattr(x_search, "_validate_urls", validate)
+
+    # When: discovery runs.
+    result = x_search.search_x("Claude Code")
+
+    # Then: Keenable is interleaved last, after Brave and Yahoo.
+    assert captured == [
+        "https://x.com/a/status/1",
+        "https://x.com/b/status/2",
+        "https://x.com/c/status/3",
+    ]
+    assert result.discovery_sources == ("brave", "yahoo", "keenable")
+
+
+def test_search_skips_keenable_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given: the Keenable route is switched off by environment.
+    monkeypatch.setenv("INSANE_SEARCH_KEENABLE", "off")
+    monkeypatch.setattr(x_search, "_resolve_xai_credential", lambda: None)
+    monkeypatch.setattr(
+        x_search,
+        "_discover_with_brave",
+        lambda _query, _limit, _timeout: ["https://x.com/example/status/123"],
+    )
+    monkeypatch.setattr(x_search, "_discover_with_yahoo", lambda _query, _limit, _timeout: [])
+    monkeypatch.setattr(
+        x_search,
+        "_discover_with_keenable",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("Keenable must not be called")),
+    )
+    monkeypatch.setattr(x_search, "_validate_urls", _validated_post)
+
+    # When: discovery runs.
+    result = x_search.search_x("Claude Code")
+
+    # Then: no request leaves for Keenable and the other free routes are unchanged.
+    assert result.ok is True
+    assert result.discovery_sources == ("brave",)
+    assert "keenable" not in result.discovery_errors
 
 
 def test_xai_discovery_reads_final_citations_only(monkeypatch: pytest.MonkeyPatch) -> None:
