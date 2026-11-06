@@ -266,6 +266,8 @@ mkdir -p ~/.insane-search/node && cp "${CLAUDE_PLUGIN_ROOT}/skills/insane-search
 cd ~/.insane-search/node && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install
 ```
 
+**Aside 레인이 먼저다(0.17.5).** `aside` CLI가 PATH에 있으면 JS 렌더가 필요한 폴백은 로컬 크롬을 띄우지 않고 사용자의 Aside 브라우저(`aside repl` → openTab → content/innerText)로 렌더한다. trace에는 `executor=aside_browser`로 남는다. Aside가 못 열면(verdict 비OK) 아래 기존 레인으로 그대로 내려간다. 끄기: `INSANE_BROWSER=chrome`. 폼 작성·로그인·클릭 같은 **조작**은 이 엔진이 아니라 `aside-browser` 스킬로 직접 한다.
+
 **브라우저 레인은 headful이 기본이다.** headless Chrome은 지문 이전에 신호만으로 봇 점수를 먹어 Cloudflare 챌린지를 통과하지 못한다 — nodriver(raw CDP)·patchright 템플릿도 Playwright 템플릿과 같이 `headless=false`로 돈다(`{"headless": true}` 인자로 덮어쓸 수 있음).
 
 ## 빠른 참조 — Phase 0 명령어

@@ -265,6 +265,73 @@ class _FakeCookies:
         return iter([])
 
 
+
+# --- Aside (user's own browser) lane ------------------------------------------
+# When the Aside CLI is installed, JS rendering goes through the user's own
+# signed-in Aside browser instead of spawning a separate headful Chrome window
+# (2026-11-06: owner objected to Chrome windows popping during research).
+# Opt out with INSANE_BROWSER=chrome. The lane is skipped silently when `aside`
+# is not on PATH, so behaviour elsewhere is unchanged.
+_ASIDE_PREFIX = "ENV:"
+_ASIDE_SCRIPT = (
+    "const __p = await openTab(%s);"
+    "%s"
+    "const __h = await __p.content();"
+    "let __t = '';try{__t = await __p.evaluate(() => document.body ? document.body.innerText : '');}catch(e){}"
+    "console.log('ENV:' + JSON.stringify({finalUrl: __p.url(), html: __h, innerText: __t}));"
+    "await closeTab(__p);"
+)
+
+
+def _aside_available() -> bool:
+    if os.environ.get("INSANE_BROWSER", "").strip().lower() == "chrome":
+        return False
+    return shutil.which("aside") is not None
+
+
+def _run_aside(
+    att: Attempt, url: str, *, success_selectors: Optional[list[str]], timeout: int, t0: float,
+) -> tuple[Attempt, str]:
+    """Render `url` in the user's Aside browser via `aside repl` and validate like any lane."""
+    att.executor = "aside_browser"
+    wait = ""
+    if success_selectors:
+        wait = ("try{await __p.waitForSelector(%s, {timeout: %d});}catch(e){}"
+                % (json.dumps(success_selectors[0]), min(timeout, 60) * 1000))
+    script = _ASIDE_SCRIPT % (json.dumps(url), wait)
+    try:
+        proc = subprocess.run(["aside", "repl", script], capture_output=True, text=True,
+                              timeout=min(timeout, 110) + 10)
+    except subprocess.TimeoutExpired:
+        att.error = "aside repl timed out"
+        att.verdict = Verdict.UNKNOWN.value
+        att.elapsed_s = round(time.time() - t0, 3)
+        return att, ""
+    att.elapsed_s = round(time.time() - t0, 3)
+    line = next((l for l in proc.stdout.splitlines() if l.startswith(_ASIDE_PREFIX)), None)
+    if proc.returncode != 0 or line is None:
+        att.error = f"aside: {(proc.stderr or proc.stdout or 'no envelope')[-300:]}"
+        att.verdict = Verdict.UNKNOWN.value
+        return att, ""
+    try:
+        env = json.loads(line[len(_ASIDE_PREFIX):])
+    except Exception:
+        att.error = "aside: malformed envelope"
+        att.verdict = Verdict.UNKNOWN.value
+        return att, ""
+    html = env.get("html") or ""
+    final_url = env.get("finalUrl") or url
+    resp = _FakeResp(html, status=200, final_url=final_url)
+    vr = validate(resp, success_selectors=success_selectors)
+    att.status = 200
+    att.body_size = len(html)
+    att.verdict = vr.verdict.value
+    att.reasons = list(vr.reasons)
+    att.url = final_url
+    if env.get("innerText"):
+        att._inner_text = env["innerText"]
+    return att, html
+
 def run_playwright_fallback(
     url: str,
     *,
@@ -297,6 +364,14 @@ def run_playwright_fallback(
         impersonate=None,
         referer="",
     )
+
+    if _aside_available() and not choice.startswith("playwright_mcp"):
+        aside_att, aside_html = _run_aside(att, url, success_selectors=success_selectors, timeout=timeout, t0=t0)
+        if aside_att.verdict in (Verdict.STRONG_OK.value, Verdict.WEAK_OK.value, Verdict.SUSPECT_OK.value):
+            return aside_att, aside_html
+        # Aside could not render it: fall through to the original lane, keep the diagnosis.
+        att = Attempt(phase="fallback", executor=choice, url=url, url_transform="original",
+                      impersonate=None, referer="", error=f"aside_browser first: {aside_att.error or aside_att.verdict}")
 
     if choice == "protocol_stealth_chrome":
         return _run_protocol_stealth(att, url, success_selectors=success_selectors, timeout=timeout, t0=t0)

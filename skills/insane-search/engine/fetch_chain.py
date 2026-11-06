@@ -1151,7 +1151,7 @@ def _untried_routes(stop_reason, grid_exhausted) -> tuple[list[str], bool]:
 
 
 _REAL_EXECUTORS = frozenset({
-    "curl_cffi", "playwright_real_chrome", "playwright_mobile_chrome"})
+    "curl_cffi", "aside_browser", "playwright_real_chrome", "playwright_mobile_chrome"})
 _INFRA_AUTH_VERDICTS = frozenset({Verdict.AUTH_REQUIRED.value, Verdict.NOT_FOUND.value})
 _WAF_VERDICTS = frozenset({
     Verdict.CHALLENGE.value, Verdict.BLOCKED.value,
