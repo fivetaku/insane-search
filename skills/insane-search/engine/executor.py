@@ -369,6 +369,15 @@ def run_playwright_fallback(
         aside_att, aside_html = _run_aside(att, url, success_selectors=success_selectors, timeout=timeout, t0=t0)
         if aside_att.verdict in (Verdict.STRONG_OK.value, Verdict.WEAK_OK.value, Verdict.SUSPECT_OK.value):
             return aside_att, aside_html
+        # INSANE_NO_LOCAL_CHROME=1: never open a local Chrome window after Aside fails.
+        # Return the failure with a hint so the caller switches to the aside-browser skill.
+        if os.environ.get("INSANE_NO_LOCAL_CHROME", "").strip() == "1":
+            aside_att.error = (
+                f"aside_browser failed ({aside_att.error or aside_att.verdict}); local Chrome fallback "
+                "disabled by INSANE_NO_LOCAL_CHROME=1 — open this URL with the aside-browser skill instead"
+            )
+            aside_att.elapsed_s = round(time.time() - t0, 3)
+            return aside_att, ""
         # Aside could not render it: fall through to the original lane, keep the diagnosis.
         att = Attempt(phase="fallback", executor=choice, url=url, url_transform="original",
                       impersonate=None, referer="", error=f"aside_browser first: {aside_att.error or aside_att.verdict}")
