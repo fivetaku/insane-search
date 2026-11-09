@@ -9,7 +9,7 @@ jobs:
     with:
       # 엔진 테스트는 스크립트형(python3 <file>)이라 파일마다 실행하고, 하나라도 실패하면 job을 실패시킨다.
       # test_smoke·test_u4에는 example.com/httpbin 온라인 점검이 일부 섞여 있다.
-      python-packages: curl_cffi markdownify pdfplumber pyyaml beautifulsoup4
+      python-packages: pytest curl_cffi markdownify pdfplumber pyyaml beautifulsoup4
       test-command: |
         cd skills/insane-search
         rc=0
