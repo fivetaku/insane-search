@@ -11,12 +11,14 @@ python3 -m engine.x_search "{검색어}" --limit 10
 
 `engine.x_search`는 단일 공급자에 의존하지 않는다.
 
-1. **무료 Brave·Yahoo discovery** — 항상 병렬 실행, API 키 불필요. 한 검색엔진이 차단되거나 색인 결과가 없어도 다른 경로로 계속한다.
+1. **무료 Brave·Yahoo discovery** — 항상 병렬 실행, API 키 불필요. 한 검색엔진이 차단되거나 색인 결과가 없어도 다른 경로로 계속한다. `INSANE_SEARCH_KEENABLE=on`이면 키 없는 Keenable JSON 검색 API(`site: x.com`)가 같은 쿼리로 병렬 추가되고, 교차 병합에서 Brave·Yahoo 다음 순서다(기본은 꺼짐).
 2. **xAI `x_search`** — `XAI_API_KEY` 또는 로컬 OMO xAI OAuth가 있을 때만 병렬 실행
 3. **교차 병합** — 한 공급자가 결과 상한을 독점하지 않도록 URL을 교차 선택
 4. **tweet-result 재검증** — 원문·작성자·시각·반응 수를 다시 가져와 최종 근거로 사용
 
 xAI가 없거나 실패해도 무료 검색으로 계속된다. 유료 경로를 명시적으로 끄려면 `--free-only` 또는 `INSANE_SEARCH_XAI=off`를 사용한다. 결과의 `discovery_sources`, `degraded_reason`, `discovery_errors`, `rejected_urls`, 각 post의 `discovered_by`가 provenance를 제공한다.
+
+> ⚠️ **제3자 전송 고지**: Keenable 경로는 기본으로 꺼져 있고 `INSANE_SEARCH_KEENABLE=on`(또는 `1`·`true`·`yes`)일 때만 호출된다. 켜면 검색어(위 두 쿼리 템플릿)를 `api.keenable.ai/v1/search/public`으로 보낸다. 앱 식별 헤더 `X-Keenable-Title: insane-search`만 붙고 API 키·쿠키는 보내지 않는다. 키 없는 한도는 IP당 초당 10회·시간당 1,000회(검색 1회 = 요청 2회).
 
 > Grok Build를 호출하는 구조가 아니다. X 검색에는 빠른 `grok-4.20-0309-non-reasoning`과 xAI 서버사이드 `x_search`를 사용하며, 핵심 기능은 모델보다 검색 도구다.
 

@@ -15,6 +15,7 @@ from .x_search_types import XPost, XSearchResult
 _io = importlib.import_module(".x_search_io", __package__)
 _http_get = _io.http_get
 _http_post_json = _io.http_post_json
+_http_post_public_json = _io.http_post_public_json
 _resolve_xai_credential = _io.resolve_xai_credential
 
 
@@ -24,6 +25,8 @@ _X_STATUS_RE = re.compile(  # NOTE-BIAS-OK — sanctioned X Phase-0 discovery ad
 )
 _BRAVE_SEARCH_URL = "https://search.brave.com/search?q="  # NOTE-BIAS-OK
 _YAHOO_SEARCH_URL = "https://search.yahoo.com/search?p="  # NOTE-BIAS-OK
+_KEENABLE_SEARCH_URL = "https://api.keenable.ai/v1/search/public"  # NOTE-BIAS-OK
+_KEENABLE_APP_TITLE = "insane-search"
 _XAI_RESPONSES_URL = "https://api.x.ai/v1/responses"  # NOTE-BIAS-OK
 _XAI_MODEL = "grok-4.20-0309-non-reasoning"
 _SEARCH_QUERIES = ('site:x.com "{query}"', '"{query}" x.com/status')  # NOTE-BIAS-OK
@@ -47,15 +50,18 @@ def search_x(
     if use_xai is None:
         use_xai = os.environ.get("INSANE_SEARCH_XAI", "auto").lower() not in {"0", "false", "off", "no"}
     credential = _resolve_xai_credential() if use_xai else None
+    use_keenable = os.environ.get("INSANE_SEARCH_KEENABLE", "").lower() in {"1", "true", "on", "yes"}  # opt-in
     discovered: list[tuple[str, list[str]]] = []
     discovery_errors: dict[str, str] = {}
     degraded_reason = ""
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         free_futures = {
             "brave": pool.submit(_discover_with_brave, query, limit, timeout),
             "yahoo": pool.submit(_discover_with_yahoo, query, limit, timeout),
         }
+        if use_keenable:
+            free_futures["keenable"] = pool.submit(_discover_with_keenable, query, limit, timeout)
         xai_future = (
             pool.submit(_discover_with_xai, query, limit, timeout, credential)
             if credential
@@ -157,6 +163,45 @@ def _discover_with_search_engine(
                 return urls
     if successful_responses == 0:
         raise XSearchError(f"{provider_name} X discovery failed")
+    return urls
+
+
+def _discover_with_keenable(query: str, limit: int, timeout: int) -> list[str]:
+    """Keyless JSON search API; same query templates as the HTML engines, scoped to X.
+
+    Keenable returns its closest matches even when none contain the query, so a
+    result is kept only if its title or snippet contains every query term.
+    """
+    terms = re.findall(r"\w+", query.casefold())
+    urls: list[str] = []
+    successful_responses = 0
+    for template in _SEARCH_QUERIES:
+        payload = {
+            "query": template.format(query=query),
+            "site": "x.com",  # NOTE-BIAS-OK
+            "max_results": min(50, limit * 2),
+        }
+        try:
+            response = _http_post_public_json(
+                _KEENABLE_SEARCH_URL, payload, {"X-Keenable-Title": _KEENABLE_APP_TITLE}, timeout
+            )
+            results = response.json().get("results", []) if response.status_code == 200 else None
+        except Exception:  # transport or JSON error: this route only, the other routes continue
+            results = None
+        if results is None:
+            continue
+        successful_responses += 1
+        for result in results:
+            text = f"{result.get('title') or ''} {result.get('snippet') or ''}".casefold()
+            if not all(term in text for term in terms):
+                continue
+            canonical = _canonical_status_url(str(result.get("url") or ""))
+            if canonical and canonical not in urls:
+                urls.append(canonical)
+                if len(urls) >= limit:
+                    return urls
+    if successful_responses == 0:
+        raise XSearchError("Keenable X discovery failed")
     return urls
 
 
