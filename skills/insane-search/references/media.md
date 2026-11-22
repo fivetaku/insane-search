@@ -121,7 +121,7 @@ yt-dlp에는 Threads 익스트랙터가 없다 (2026.03 기준 `--list-extractor
 영상 포스트는 engine Phase 0 라우트(`engine/phase0.py::_threads`)가 처리한다:
 
 ```bash
-python3 -m engine "https://www.threads.com/@{handle}/post/{shortcode}"
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine "https://www.threads.com/@{handle}/post/{shortcode}"
 # → content = {"post_code": "...", "video_urls": ["https://scontent-….cdninstagram.com/…"]}
 curl -sL -o /tmp/threads.mp4 "{video_urls[0]}"        # 서명 CDN URL은 plain curl로 충분
 ffprobe -v error -show_entries stream=codec_type,codec_name /tmp/threads.mp4

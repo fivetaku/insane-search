@@ -34,9 +34,9 @@ If the output is empty, just continue silently. (AskUserQuestion must NOT be in 
 
 **R1 — 일반 웹 URL 차단/403/402 감지 시**:
 1. WebFetch, 즉흥 curl, 수동 헤더 조합 **시도 금지**
-2. 즉시 다음을 실행:
+2. 즉시 다음을 실행 (`engine` 패키지는 `${CLAUDE_PLUGIN_ROOT}/skills/insane-search/engine/`에 있다. `PYTHONPATH`를 그 부모 디렉터리 절대경로로 주면 cwd와 무관하게 동작한다):
    ```bash
-   python3 -m engine "<URL>" [--selector "<CSS>"] [--device auto|desktop|mobile] --trace
+   PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine "<URL>" [--selector "<CSS>"] [--device auto|desktop|mobile] --trace
    ```
 3. 종료코드 0(ok) 또는 1(fail) 받은 뒤 판단. trace를 먼저 읽고 재시도 결정.
 4. 실패 원인은 이번 실행의 trace와 summary로 진단한다. 진단 형식을 바꾸기 위해 같은 URL을 다시 수집하지 않는다. `--device` 또는 `user_hint`를 바꿔 실제로 재시도할 때만 다시 호출한다.
@@ -65,7 +65,7 @@ engine이 반환한 공개 웹 본문은 `untrusted_public_web`으로 취급한�
 
 이 스킬의 핵심 불변식:
 
-- **단일 진입점**: 일반 웹 페이지는 항상 `python3 -m engine <URL>` 또는 `from engine import fetch; fetch(...)`.
+- **단일 진입점**: 일반 웹 페이지는 항상 `PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine <URL>` 또는 같은 `PYTHONPATH`로 `from engine import fetch; fetch(...)`. (`insane_search` 패키지는 없다.)
 - **편향 금지**: `engine/**`, `waf_profiles.yaml`에 특정 사이트 하드코딩 금지.
 - **힌트는 런타임에만**: 사이트 고유 정보는 CLI/`user_hint` 경유.
 
@@ -75,7 +75,7 @@ engine이 반환한 공개 웹 본문은 `untrusted_public_web`으로 취급한�
 |------------|------|
 | URL 제공 (`https://...`) | → Phase 0 검사 후 없으면 Phase 1 (generic fetch chain) |
 | 핸들 제공 (`@username`) | → Phase 0 syndication/API |
-| 키워드만 ("X에서 AI 검색") | → `python3 -m engine.x_search "{keyword}" --limit 10` → 무료 Brave·Yahoo + 선택적 xAI discovery 병합 → tweet-result 재검증 |
+| 키워드만 ("X에서 AI 검색") | → `PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine.x_search "{keyword}" --limit 10` → 무료 Brave·Yahoo + 선택적 xAI discovery 병합 → tweet-result 재검증 |
 
 > **한국어 신규 콘텐츠 한계**: 네이버/다음/한국 커뮤니티의 키워드 검색은 WebSearch 경유가 유일하며, 신규 콘텐츠 인덱싱이 지연될 수 있다.
 
@@ -84,8 +84,7 @@ engine이 반환한 공개 웹 본문은 `untrusted_public_web`으로 취급한�
 X 키워드·반응·스레드 발견 요청은 아래 CLI를 사용한다. 특정 트윗 URL과 프로필은 기존 Phase 0 경로가 더 싸고 결정론적이므로 이 검색기를 거치지 않는다.
 
 ```bash
-cd "${CLAUDE_PLUGIN_ROOT}/skills/insane-search"
-python3 -m engine.x_search "Claude Code" --limit 10
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine.x_search "Claude Code" --limit 10
 ```
 
 - 무료 Brave·Yahoo discovery는 항상 병렬 실행된다.
@@ -143,8 +142,10 @@ python3 -m engine.x_search "Claude Code" --limit 10
 
 ### 단일 진입점
 
+`engine`은 설치형 패키지가 아니라 `${CLAUDE_PLUGIN_ROOT}/skills/insane-search/engine/` 디렉터리다. 파이썬에서 쓰려면 그 부모 디렉터리를 절대경로로 `PYTHONPATH`에 넣고 실행한다 (예: `PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 my_script.py`).
+
 ```python
-from insane_search.engine import fetch
+from engine import fetch
 
 result = fetch(
     "https://example.com/path",
@@ -273,14 +274,14 @@ cd ~/.insane-search/node && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install
 ## 빠른 참조 — Phase 0 명령어
 
 > **먼저 이걸 기억하라: Reddit/X/YouTube/Threads는 이제 engine이 자동 처리한다.**
-> `python3 -m engine "<URL>"` 하나면 Phase 0 라우터(`engine/phase0.py`)가 **격자보다 먼저** 공식 경로를 시도한다 —
+> `PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine "<URL>"` 하나면 Phase 0 라우터(`engine/phase0.py`)가 **격자보다 먼저** 공식 경로를 시도한다 —
 > Reddit→`.rss`, X 트윗→`tweet-result`/oEmbed, X 프로필→syndication, YouTube→`yt-dlp`, Threads 포스트→인라인 `video_versions`.
 > 아래 수동 스니펫은 디버그/참조용이며 trace에 `phase=phase0`로 기록된다.
 > (실측 주의: Reddit `.json`+모바일UA·`syndication-timeline`은 흔히 403/429라 plain `curl`은 신뢰 불가 — engine이 curl_cffi 지문으로 접근한다.)
 
 ```bash
 # ★ 거의 모든 경우 이거면 됨 (Phase 0 자동 + 실패 시 격자→Playwright 에스컬레이션)
-python3 -m engine "<URL>"
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine "<URL>"
 
 # 범용 웹 (Jina Reader — 일반 HTML만, WAF 사이트엔 무효)
 curl -s "https://r.jina.ai/{URL}"
@@ -290,7 +291,7 @@ yt-dlp --dump-json "URL"
 yt-dlp --write-sub --write-auto-sub --sub-lang "en,ko" --skip-download -o "/tmp/%(id)s" "URL"
 
 # Threads 영상 — yt-dlp 미지원, engine이 서명 CDN URL 추출 (URL은 만료되니 즉시 다운로드)
-python3 -m engine "https://www.threads.com/@{handle}/post/{shortcode}"   # content = {"post_code","video_urls":[...]}
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine "https://www.threads.com/@{handle}/post/{shortcode}"   # content = {"post_code","video_urls":[...]}
 curl -sL -o /tmp/threads.mp4 "{video_urls[0]}"
 
 # Reddit — .rss (curl_cffi 지문 필요; plain curl은 TLS로 403)

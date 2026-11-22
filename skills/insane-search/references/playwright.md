@@ -70,7 +70,8 @@ npx patchright install chrome
 ### 호출 (engine 내부)
 
 ```python
-from insane_search.engine.executor import run_playwright_fallback
+# PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" 로 실행
+from engine.executor import run_playwright_fallback
 
 attempt, html = run_playwright_fallback(
     "https://example.com/path",

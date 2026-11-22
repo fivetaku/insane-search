@@ -5,8 +5,7 @@
 ## 검색 (트윗 발견)
 
 ```bash
-cd "${CLAUDE_PLUGIN_ROOT}/skills/insane-search"
-python3 -m engine.x_search "{검색어}" --limit 10
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine.x_search "{검색어}" --limit 10
 ```
 
 `engine.x_search`는 단일 공급자에 의존하지 않는다.
@@ -143,7 +142,7 @@ tweet-result와 oEmbed는 **장문 트윗을 약 280자에서 자르고, X 아�
 ## 조합 패턴 (검색 → 상세)
 
 ```
-1단계: `python3 -m engine.x_search "{키워드}" --limit 10` → 다중 discovery + 검증된 트윗
+1단계: `PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/skills/insane-search" python3 -m engine.x_search "{키워드}" --limit 10` → 다중 discovery + 검증된 트윗
 2단계: provenance 필드 확인 → 사용 경로, 공급자별 오류, 저하 사유를 결과에 짧게 명시
 ```
 
