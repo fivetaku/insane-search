@@ -18,6 +18,10 @@
  *
  * Canonical source: shared/update-hook/ in the gptaku_plugins repo.
  * Do not edit per-plugin copies; edit the canonical file and re-run the deploy.
+ *
+ * gptaku-update-check-rev: 2026112201
+ *   Bump this integer on EVERY change. setup.sh refreshes an installed copy only
+ *   when the bundled rev is higher (no downgrades across independently updated plugins).
  */
 
 const fs = require('fs');
@@ -144,6 +148,20 @@ function getRemoteShaCached(localSha) {
   return sha;
 }
 
+// true only when auto-update for gptaku-plugins is known to be ON. Mirrors
+// Claude Code's own resolution: an autoUpdate declared in user settings
+// (extraKnownMarketplaces) wins; otherwise the known_marketplaces.json entry
+// (which the /plugin → Marketplaces toggle writes) decides. Third-party
+// marketplaces default to off, so anything unreadable counts as off.
+function autoUpdateOn() {
+  const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return null; } };
+  const s = readJson(path.join(CONFIG_DIR, 'settings.json'));
+  const declared = s && s.extraKnownMarketplaces && s.extraKnownMarketplaces['gptaku-plugins'];
+  if (declared && typeof declared.autoUpdate === 'boolean') return declared.autoUpdate;
+  const k = readJson(path.join(CONFIG_DIR, 'plugins', 'known_marketplaces.json'));
+  return !!(k && k['gptaku-plugins'] && k['gptaku-plugins'].autoUpdate === true);
+}
+
 try {
   const sessionId = readSessionId();
 
@@ -171,8 +189,12 @@ try {
     emitNotice(
       '[GPTAKU 플러그인 업데이트 있음] gptaku-plugins 마켓플레이스에 새 커밋이 있습니다 ' +
       '(로컬 ' + lo + ' → 리모트 ' + re + '). ' +
-      '/plugin 메뉴에서 gptaku-plugins 마켓플레이스를 업데이트하거나, ' +
-      '마켓플레이스 클론에서 git pull 후 Claude Code를 재시작하세요.'
+      '지금 받으려면 `/plugin marketplace update gptaku-plugins`를 실행한 뒤 ' +
+      '/plugin에서 설치한 플러그인을 업데이트하고(터미널에서는 `claude plugin update <플러그인>@gptaku-plugins`) ' +
+      '`/reload-plugins` 또는 Claude Code 재시작으로 적용하세요.' +
+      (autoUpdateOn() ? '' :
+        ' 자동 업데이트를 켜면 다음부터는 이 과정이 필요 없습니다: ' +
+        '/plugin → Marketplaces → gptaku-plugins → Turn on auto-update.')
     );
   }
 
