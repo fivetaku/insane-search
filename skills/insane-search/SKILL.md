@@ -1,14 +1,14 @@
 ---
 name: insane-search
 description: >
-  Use when you need content from the web — reading a URL, or pulling posts, videos,
-  transcripts or listings from a specific site or platform — before calling WebFetch
-  or curl. Opens blocked/WAF sites automatically. Covers X/Twitter, Reddit, YouTube,
-  GitHub, Mastodon, Medium, Substack, Stack Overflow, Threads, Naver, Coupang,
-  LinkedIn, dcinside, fmkorea, GeekNews, and any platform with bot protection, via
-  yt-dlp (1,858 media sites), Jina Reader, public APIs (HN, Bluesky, arXiv), and a
-  WAF-profile-driven fetch chain (curl_cffi TLS impersonation, mobile URL transforms,
-  Playwright real-Chrome) with auto dependency install.
+  Use when WebFetch or curl failed or was blocked (403/402/WAF/empty SPA), or when content
+  needs a platform-specific route — posts, videos, transcripts or listings from X/Twitter,
+  Reddit, YouTube, Threads, Naver and similar sites. Opens blocked/WAF sites automatically.
+  Covers X/Twitter, Reddit, YouTube, GitHub, Mastodon, Medium, Substack, Stack Overflow,
+  Threads, Naver, Coupang, LinkedIn, dcinside, fmkorea, GeekNews, and any platform with bot
+  protection, via yt-dlp (1,858 media sites), Jina Reader, public APIs (HN, Bluesky, arXiv),
+  and a WAF-profile-driven fetch chain (curl_cffi TLS impersonation, mobile URL transforms,
+  Aside/real-Chrome rendering) with auto dependency install.
   Korean triggers: 레딧/유튜브/네이버 블로그/X/긱뉴스/쿠팡에서 가져와줘, 이 링크 읽어줘,
   유튜브 자막 뽑아줘, 트위터/X 못 열어, 사이트 차단됨, 스레드 안 열려, 디시인사이드,
   에펨코리아, 요즘IT, 클리앙, 링크드인, 당근마켓.
@@ -44,16 +44,14 @@ If the output is empty, just continue silently. (AskUserQuestion must NOT be in 
 
 **R2 — 첫 200에서 탈출 금지**: HTTP 200은 **검사 시작 조건**이지 성공이 아니다. `validate()`의 4-계층 검증을 통과해야 성공 선언. CLI는 이미 강제한다.
 
-**R3 — 편향 금지**: `engine/**`, `waf_profiles.yaml`에 특정 사이트 도메인·셀렉터·브랜드명 하드코딩 금지. `python3 engine/bias_check.py`가 CI 게이트. 자세한 규칙은 **No-Site-Name Rule** 섹션.
-
-**R4 — 힌트는 런타임에만**: 사이트 고유 정보(성공 셀렉터, 우선 Referer)는 CLI 인자 또는 `user_hint`로만 전달, 저장소에 고정 금지.
+**R3/R4 — 편향 금지·힌트는 런타임에만**: `engine/**`·`waf_profiles.yaml`에 사이트 도메인·셀렉터·브랜드명을 고정하지 않고, 사이트 고유 정보는 CLI 인자나 `user_hint`로만 넘긴다. 세부 규칙: [maintainers.md](references/maintainers.md).
 
 **R5 — Phase 0 공식 API 우선**: X/Reddit/YouTube/HN/arXiv 등 **공식 공개 엔드포인트**가 있는 플랫폼은 Phase 0 테이블을 먼저 확인하고 해당 API를 쓴다. 이건 편향이 아니라 합의된 접근 경로.
 
 **R6 — 실패 선언은 "전수 시도" 후에만 (engine이 강제하는 실패 게이트)**: engine은 실패 시 `ok=false`와 함께 **아직 안 해본 경로**(`untried_routes`)와 `must_invoke_playwright_mcp` 플래그를 반환한다. 아래가 **모두** 충족되기 전엔 "뚫을 수 없음" 결론 **금지**:
 1. `grid_exhausted=true` — false면 `fetch(max_attempts=None)`(=CLI 기본, exhaustive)로 끝까지 재호출.
 2. `untried_routes`가 **빈 배열** — 비어있지 않으면 그 경로들을 먼저 실행.
-3. `must_invoke_playwright_mcp=false` — true면 **Claude가 세션에서 직접** MCP Playwright를 돌린 뒤에만 통과: `browser_navigate` → `browser_snapshot`으로 렌더된 공개 페이지 본문(HTML)을 회수한다. (engine은 로컬 Node Chrome만 띄울 수 있고 MCP는 못 돌리므로, MCP는 **구조적으로** 에이전트의 몫이다.)
+3. `must_invoke_playwright_mcp=false` — true면 에이전트가 세션에서 브라우저 렌더를 직접 한 뒤에만 통과한다. **aside-browser 스킬로 우선 연다**(사용자 화면에 새 창을 띄우지 않는다). Playwright MCP(`browser_navigate` → `browser_snapshot`)는 aside-browser가 없는 환경의 폴백이다. engine은 MCP를 직접 못 돌리므로 이 단계는 구조적으로 에이전트의 몫이다.
 4. `stop_reason`이 `auth_required`/`404`/paywall 등 **terminal**일 때만 정직하게 실패 인정 — engine이 `untried_routes`를 **빈 채로** 돌려준다. **429(rate-limit)는 terminal 아님** — 백오프 후 재시도/다른 TLS/MCP로 재접근.
 
 요지: **engine의 give-up은 "그만해도 된다"는 허가가 아니다.** CLI는 실패 시 `⛔ NOT EXHAUSTED` 블록을 stderr로 출력한다 — 그게 보이면 위 4개를 끝낼 때까지 멈추지 않는다.
@@ -167,7 +165,7 @@ if result.ok:
     # 429/502/503/504는 probe에서 backoff 재시도(Retry-After 반영, 총 10초 캡).
     # 끄기: enable_retry=False / CLI --no-retry.
 else:
-    # Phase 3 수동 개입 (Playwright MCP) 필요 — result.trace로 원인 진단
+    # 에이전트 렌더(aside-browser 우선) 필요 — result.trace로 원인 진단
     pass
 ```
 
@@ -215,17 +213,18 @@ report     — FetchResult(ok, verdict, profile_used, trace, summary)
 |------|--------|------|
 | `needs_protocol_stealth` | `protocol_stealth_chrome` (nodriver → patchright+channel=chrome) | 자동화 프로토콜(Runtime.enable)을 지문화하는 게이트 — Playwright 심 계열은 패치 무관 실패(2026 벤치 실측) |
 | `needs_real_tls_stack` + `needs_js_exec` | `playwright_real_chrome.js` (로컬 Node) | Chromium 번들 TLS가 탐지되는 경우 |
-| `needs_js_exec` only | Playwright MCP (`mcp__playwright__*`) | Cloudflare 기본 방어 등 |
+| `needs_js_exec` only | 에이전트 렌더 — aside-browser 우선, 없으면 Playwright MCP | Cloudflare 기본 방어 등 |
 | `needs_mobile_context` (+ real_tls) | `playwright_mobile_chrome.js` | 모바일 디바이스 에뮬레이션 필요 |
 
 `protocol_stealth_chrome`는 `pip install nodriver`(또는 patchright)가 필요하다 — 없으면 다음 fallback으로 진행, `INSANE_AUTO_INSTALL=1`이면 첫 호출 시 자동 설치.
 자세한 선택 기준: [playwright.md](references/playwright.md).
 
-### Playwright MCP 호출 규칙
+### 에이전트 렌더 규칙 (`needs_js_exec only`)
 
-`fetch_chain`의 `needs_js_exec only` 케이스는 **Claude 세션에서 MCP 도구를 직접 호출**해야 한다. subprocess 경로 없음. 즉:
-1. `result.summary`에 "Playwright MCP must be invoked from the Claude session"이 포함되면
-2. `mcp__playwright__browser_navigate` → `browser_wait_for` → `browser_snapshot` 흐름으로 Claude가 직접 처리
+이 케이스는 subprocess 경로가 없어 **에이전트가 세션에서 직접 렌더**해야 한다. `result.summary`에 "Playwright MCP must be invoked from the Claude session"이 보이면:
+1. **aside-browser 스킬로 그 URL을 열어** 렌더된 본문을 회수한다(기본).
+2. aside-browser를 쓸 수 없는 환경에서만 Playwright MCP(`browser_navigate` → `browser_wait_for` → `browser_snapshot`)로 대신한다.
+3. `INSANE_NO_LOCAL_CHROME=1`이면 엔진은 Aside 실패 뒤 로컬 크롬으로 내려가지 않고 "aside-browser로 열라"는 안내와 함께 실패를 돌려준다(`engine/executor.py`). 이 안내를 받으면 같은 URL을 aside-browser로 다시 연다 — 엔진 재시도 루프를 돌리지 않는다.
 
 ## Phase 2 — 수동 개입 (옵션)
 
@@ -241,31 +240,11 @@ result = fetch(
 
 힌트는 **현재 호출 1회에만** 적용되며 저장되지 않는다.
 
-## 의존성 자동 설치
+## 의존성
 
-최초 호출 시 필요 패키지를 자동 설치한다. **curl_cffi는 0.15.0 이상**을 요구한다 — 0.15부터
-`impersonate="chrome"`이 최신 Chrome(146+) 지문으로 갱신되고(0.14는 chrome142에 고정), HTTP/3 지문과
-SSRF-safe redirect 기본값이 추가됐다. 아래 가드는 **미설치뿐 아니라 0.15 미만이면 업그레이드**한다:
-```bash
-python3 -c "import curl_cffi,bs4,yaml,pypdf,markdownify; v=curl_cffi.__version__.split('.'); assert (int(v[0]),int(v[1]))>=(0,15)" 2>/dev/null \
-  || pip install -U "curl_cffi>=0.15.0" beautifulsoup4 pyyaml pypdf markdownify -q
-```
+필요 패키지(curl_cffi ≥0.15 등)와 브라우저 레인의 Node 의존성은 첫 호출 때 자동 설치된다. 설치 가드·선택 라이브러리·수동 설치 명령: [maintainers.md](references/maintainers.md#dependencies-auto-install-details).
 
-**콘텐츠 처리 — 기본 동작 + 선택 라이브러리.** 엔진의 실사용자는 대개 LLM 컨텍스트에 넣으려는 에이전트라, 깨끗한 마크다운을 **기본으로** 준다. 라이브러리가 없으면 전부 raw 폴백으로 정상 동작한다(graceful degradation):
-- `markdownify`(MIT, 위 가드로 자동 설치) — **기본 ON**: raw HTML → 구조보존 마크다운(표→파이프표, `<pre>/<code>`→펜스). `extraction_source`가 `raw+md`. 끄려면 `--no-markdown` / `enable_markdown=False`(raw HTML 그대로).
-- `resiliparse`(Apache-2.0) — **opt-in**: `--maincontent` / `enable_maincontent=True`. nav/footer/광고 제거 후 본문만(`extraction_source`=`maincontent`), markdown보다 우선. 비-article 페이지에선 본문을 과하게 잘라낼 수 있어 기본 off로 둔다.
-- `pdfplumber`(MIT) — **자동**: PDF 본문을 pdfplumber(다단컬럼·표 우수) 우선 추출, 미설치 시 pypdf 폴백. **`pymupdf4llm`/`PyMuPDF`는 AGPL이라 사용 금지.**
-```bash
-pip install resiliparse pdfplumber -q   # 본문추출(opt-in)·PDF 개선을 원할 때
-```
-
-실패(`ok=False`) 응답에는 `block_class`가 붙는다 — `bot_detection`(라우트 결과가 엇갈리거나 WAF 시그널 → 브라우저·다른 라우트로 우회 가능) vs `infra_or_auth`(모든 라우트가 균일하게 401/404 → 스텔스로 우회 불가). 재시도 가치 판단에 사용한다.
-
-Playwright 로컬 경로 사용 시 Node가 필요하다. **Node 의존성은 첫 브라우저 폴백에서 자동 설치된다** — `~/.insane-search/node`에 한 번 설치해 플러그인 버전이 올라가도 재사용하고, `NODE_PATH`로 템플릿에 주입한다. (`engine/templates/node_modules`는 gitignore라 마켓플레이스 설치본에는 애초에 없다 — 예전에는 이 때문에 마지막 폴백이 `Cannot find module 'playwright'`로 항상 죽었다.) 번들 Chromium은 받지 않는다(`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`) — 템플릿이 `channel:'chrome'`로 **시스템 Chrome**을 쓰기 때문. **Patchright**는 Playwright drop-in 포크로, Cloudflare/DataDome이 감지하는 CDP `Runtime.enable` 누출을 막아준다 — 설치돼 있으면 최우선 사용하고, 없으면 playwright-extra+stealth → plain playwright로 폴백한다. 수동 설치가 필요하면:
-```bash
-mkdir -p ~/.insane-search/node && cp "${CLAUDE_PLUGIN_ROOT}/skills/insane-search/engine/templates/package.json" ~/.insane-search/node/
-cd ~/.insane-search/node && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install
-```
+실패(`ok=False`) 응답에는 `block_class`가 붙는다 — `bot_detection`(다른 라우트·브라우저로 우회 가능) vs `infra_or_auth`(모든 라우트가 401/404 → 우회 불가). 재시도 가치 판단에 쓴다.
 
 **Aside 레인이 먼저다(0.17.5).** `aside` CLI가 PATH에 있으면 JS 렌더가 필요한 폴백은 로컬 크롬을 띄우지 않고 사용자의 Aside 브라우저(`aside repl` → openTab → content/innerText)로 렌더한다. trace에는 `executor=aside_browser`로 남는다. Aside가 못 열면(verdict 비OK) 아래 기존 레인으로 그대로 내려간다. 끄기: `INSANE_BROWSER=chrome`. Aside가 못 열었을 때 로컬 크롬으로 내려가지 않게 하려면 `INSANE_NO_LOCAL_CHROME=1`을 켠다(0.17.6). 그러면 엔진이 실패와 "aside-browser로 열라"는 안내를 돌려주고 크롬 창은 뜨지 않는다. 폼 작성·로그인·클릭 같은 **조작**은 이 엔진이 아니라 `aside-browser` 스킬로 직접 한다.
 
@@ -308,34 +287,9 @@ curl -sL "https://hacker-news.firebaseio.com/v0/topstories.json?limitToFirst=10&
 
 > 커버리지 회귀 점검: `python3 tests/coverage_battery.py` — 플랫폼별 전수 경로 pass/fail + 썩은 예시 자동 적발.
 
-## No-Site-Name Rule
+## 새 사이트가 안 뚫릴 때
 
-`engine/**`, `waf_profiles.yaml`, `engine/templates/**` 파일에는 **특정 사이트의 도메인/URL/셀렉터/브랜드명을 하드코딩하지 않는다**.
-
-### 금지
-
-- `"coupang.com": {...}` 같은 사이트별 레지스트리 엔트리
-- `if "coupang" in url: ...` 같은 도메인 분기
-- WAF 프로파일 `notes`에 특정 사이트 이름이나 경험적 byte 크기 박제
-
-### 허용
-
-- `SKILL.md` / `references/*.md`의 **설명 텍스트**에 사이트 이름 예시 (독자 이해용)
-- `Phase 0` 공식 API 인덱스 (플랫폼이 공식 공개한 엔드포인트)
-- `observations/*.jsonl` 로그 (append-only 관측 데이터 — 코드 경로에 영향 없음)
-- 호출자가 제공하는 `success_selectors`, `user_hint` (현재 호출에만 유효)
-
-### 경계 사례 판단 기준
-
-> "이 엔트리가 다른 사이트에서도 같은 WAF를 쓰면 일반적으로 유효한가?" → YES면 `waf_profiles.yaml`, NO면 runtime hint.
-
-### 새 사이트가 안 뚫릴 때
-
-1. 먼저 `result.trace`에서 어느 phase가 실패했는지 확인
-2. 사용자의 `user_hint`로 1회 재시도
-3. 반복 성공 패턴이 관측되면 `observations/`에 로그 (아직 자동 기록 없음 — 수동)
-4. 3회+ 반복 확인되고 **동일 WAF를 쓰는 다른 사이트에도 유효**하면 `waf_profiles.yaml` 해당 프로파일의 `tls_impersonate_candidates` / `url_transform_order`를 튜닝 (사이트명 절대 넣지 않음)
-5. 여전히 안 되면 새 WAF 프로파일 후보 검토 (예: DataDome 세부화, Kasada 등)
+`result.trace`에서 실패한 phase를 확인하고 `user_hint`로 1회 재시도한다. 프로필 튜닝·No-Site-Name 규칙은 [maintainers.md](references/maintainers.md#no-site-name-rule).
 
 ## 관련 문서 (references/) — 언제 무엇을 읽을지
 
@@ -368,16 +322,6 @@ curl -sL "https://hacker-news.firebaseio.com/v0/topstories.json?limitToFirst=10&
 | [`naver.md`](references/naver.md) | 네이버 블로그·뉴스·증권·검색 접근 | 서비스별 대체 접근(블로그는 `m.blog.naver.com` 변환, 증권은 비공식 JSON, 검색은 `search.naver.com`), 한글 검색 쿼리 패턴 |
 | [`media.md`](references/media.md) | YouTube/Vimeo/Twitch/TikTok/SoundCloud 등 미디어 메타·자막·오디오 필요 시 | `yt-dlp --dump-json` 기반 1,858개 사이트 커버, 자막 다운로드(`--write-sub`), 포맷 선택, 라이브/팟캐스트 |
 
-### D. Engine 코드 직접 읽을 때
+### D. Engine 코드
 
-| 파일 | 언제 읽는가 |
-|------|-------------|
-| `engine/phase0.py` | Phase 0 공식-API 라우터 (Reddit/X/YouTube 자동 경로). 플랫폼·경로 추가 시. bias_check 면제 파일(R5 sanctioned) |
-| `engine/fetch_chain.py` | 체인 단계 로직·`Attempt`/`FetchResult` schema·`untried_routes`/`must_invoke_playwright_mcp` 실패게이트 |
-| `engine/validators.py` | 4-계층 검증 세부 (Verdict 분류, 챌린지 마커 목록) |
-| `engine/waf_detector.py` | WAF 랭킹 감지 알고리즘, `_LAST_LOAD_ERROR` 처리 |
-| `engine/waf_profiles.yaml` | 프로파일별 detectors·tls_candidates·capabilities_needed |
-| `engine/url_transforms.py` | URL 변환 규칙 추가할 때 |
-| `engine/executor.py` | Playwright MCP vs local capability 매칭 로직 |
-| `engine/templates/*.js` | Playwright 템플릿 튜닝 (warmup, reload, devices) |
-| `engine/bias_check.py` | 편향 린터 규칙 — brand denylist, URL_PATTERN, excluded dirs |
+엔진 파일별 역할(phase0·fetch_chain·validators·waf_detector·executor·bias_check 등): [maintainers.md](references/maintainers.md#engine-code-map).
