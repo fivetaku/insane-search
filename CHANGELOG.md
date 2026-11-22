@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.7 — 2026-11-22
+- Fixed engine import examples (PYTHONPATH)
+- Fallback-only trigger
+- Aside-browser first
+
 ## 0.17.4 — 2026-10-28
 - **Windows에서 브라우저 폴백 의존성 설치 실패 수정 (#13).** `npm`이 `npm.cmd`라 `subprocess.run(["npm", ...])`이 실행 파일을 못 찾고 조용히 실패하던 문제. `shutil.which("npm")`이 찾은 경로로 실행한다.
 - **Windows 콘솔 인코딩 때문에 받아 온 본문이 버려지던 문제 수정 (#11).** `python -m engine` 시작 시 stdout·stderr를 UTF-8로 재설정해, cp949 같은 코드 페이지에서 `UnicodeEncodeError`로 종료하지 않는다.
