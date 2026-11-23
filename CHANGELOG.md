@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.18.0 — 2026-11-23
+- **Codex에서도 같은 스킬로 동작.** SKILL.md에 Codex용 경로 안내를 넣고 `references/codex.md`를 추가했다(질문 없음, `${CLAUDE_PLUGIN_ROOT}` 처리, 첫 실행 설정 생략, 기본 샌드박스에서 Aside 인증이 막히면 권한 상승 요청). Codex 첫 실행 설정은 아무것도 하지 않도록 가드했다.
+
 ## 0.17.7 — 2026-11-22
 - Fixed engine import examples (PYTHONPATH)
 - Fallback-only trigger

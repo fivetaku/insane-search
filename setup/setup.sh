@@ -28,6 +28,17 @@
 # an explicit "star yes" / "autoupdate yes".
 set -uo pipefail
 
+# --- Codex guard: Codex CLI also runs this script; there it must do nothing at all. ---
+# Codex layout: <codex_home>/plugins/cache/<mkt>/<plugin>/<ver>/ with <codex_home>/config.toml
+# and no plugins/installed_plugins.json. Claude has installed_plugins.json (and no config.toml).
+_gp_root="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)"
+case "$_gp_root" in
+  */plugins/cache/*/*/*)
+    _gp_home="$(cd "$_gp_root/../../../../.." 2>/dev/null && pwd)"
+    if [ -f "$_gp_home/config.toml" ] && [ ! -e "$_gp_home/plugins/installed_plugins.json" ]; then exit 0; fi ;;
+esac
+unset _gp_root _gp_home
+
 PLUGIN="insane-search"
 OWN_REPO="fivetaku/insane-search"
 HUB_REPO="fivetaku/gptaku_plugins"

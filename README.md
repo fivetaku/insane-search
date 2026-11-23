@@ -36,6 +36,8 @@ A resilient public-page reader for Claude Code. No API keys, no proxy setup.
 /reload-plugins
 ```
 
+Codex: `codex plugin marketplace add fivetaku/gptaku_plugins` then `codex plugin add insane-search@gptaku-plugins`.
+
 No commands to learn. Ask Claude Code normally — insane-search kicks in when a fetch gets blocked.
 
 ## 💬 Try it

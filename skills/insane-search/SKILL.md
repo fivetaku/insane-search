@@ -28,6 +28,8 @@ description: >
 
 If the output is empty, just continue silently. (AskUserQuestion must NOT be in frontmatter allowed-tools.) Do not narrate beyond the question itself.
 
+> Codex에서는 `${CLAUDE_PLUGIN_ROOT}`를 이 플러그인 루트(이 SKILL.md에서 두 단계 위 폴더)로 바꿔 읽는다. Step 0 첫 실행 설정은 Claude Code 전용이라 Codex에서는 건너뛴다. Codex 차이: [references/codex.md](references/codex.md)
+
 # Insane Search
 
 > URL 접근이 차단될 때, **사이트 무관한** 대체 접근 전략을 자동 선택한다.
